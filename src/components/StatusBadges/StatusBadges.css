@@ -1,0 +1,128 @@
+/* 気分スコア・通知バッジ・緊急バナーの見た目。
+ *
+ * ★すべて画面「上部の帯」に置く★
+ *   以前は家族への通知を画面下部のトースト（bottom: 24px）で出していたが、
+ *   「話す」ボタンと位置を取り合って重なっていたため廃止した。
+ *   通知の状況は上部の帯に小さく出し、問診の結果は中央の結果パネルで見せる。
+ *
+ * z-index の意味は App.css の先頭にまとめてある。
+ */
+
+/* 気分スコア（左上）。右上はハンバーガーボタンが使うため左に置く。 */
+.mood-badge {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+}
+
+.mood-emoji {
+  font-size: 40px;
+}
+
+.mood-score {
+  font-size: 22px;
+  font-weight: bold;
+  color: #4a86ff;
+}
+
+/* 分析中のくるくる（点が3つ揺れる）。 */
+.mood-pending {
+  font-size: 18px;
+  color: #6b7aa0;
+  animation: mood-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mood-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 上部中央のバッジ置き場。通知オフ・家族への送信状況をここに縦に並べる。 */
+.status-stack {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  /* 画面の左右いっぱいまで広がらないようにする */
+  max-width: min(80vw, 520px);
+}
+
+.status-badge {
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.status-suppressed {
+  background: #6c757d;
+  color: #ffffff;
+}
+
+/* 家族へ通知したことを知らせるバッジ（上部中央）。 */
+.status-family {
+  background: #f4a261;
+  color: #14213d;
+}
+
+/* 緊急バナー（画面上部・目立つ赤）。常に最前面。 */
+.alert-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 24px;
+  font-size: 20px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  text-align: center;
+  background: #e63946;
+  color: #ffffff;
+  z-index: 30;
+}
+
+.alert-close {
+  font-size: 16px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+}
+
+/* 今どちらのモードで動いているかの表示（右下・極小）。
+   デモ当日に mock へ退避したことを見落とさないための保険。 */
+.mode-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  z-index: 20;
+  opacity: 0.7;
+}
+
+.mode-aws {
+  color: #2a9d8f;
+}
+
+.mode-mock {
+  color: #8d99ae;
+}

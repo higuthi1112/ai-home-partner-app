@@ -1,0 +1,31 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+dev-dist
+*.local
+
+# 環境設定。Lambda の URL や合言葉が入るので、リポジトリには入れない。
+# 新しく参加した人は .env.example をコピーして .env を作ること。
+# ※注意: VITE_* の値はビルド成果物に埋め込まれ、公開ページ上で誰でも読める。
+#   .gitignore は「うっかり共有しない」ための衛生であって、秘密の防御ではない。
+.env
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

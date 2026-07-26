@@ -1,0 +1,6 @@
+{
+  "_メモ": "SOS（「助けて」）のテスト。これを実行すると★実際にご家族のGmailへ緊急メールが届きます★。SNSの購読確認（Confirm subscription）を済ませてから実行してください。緊急通知は「今日は病院（通知オフ）」の設定中でも必ず送られる仕様です（安全側に倒しています）。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"action\":\"notify\",\"userId\":\"elder-001\",\"controlAction\":\"emergency\",\"text\":\"たすけて\"}"
+}

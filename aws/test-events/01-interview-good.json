@@ -1,0 +1,6 @@
+{
+  "_メモ": "元気なときの問診。level が GOOD か LOG になり、★メールが飛ばないこと★ を確認します。「通知を抑える設計」が効いているかのテストです。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"action\":\"analyzeInterview\",\"userId\":\"elder-001\",\"slot\":\"morning\",\"answers\":[{\"questionId\":\"sleep\",\"question\":\"昨夜はよく眠れましたか？\",\"answer\":\"ぐっすり眠れました。よく休めましたよ\"},{\"questionId\":\"meal\",\"question\":\"朝ごはんは召し上がりましたか？\",\"answer\":\"はい、ごはんとお味噌汁をいただきました\"},{\"questionId\":\"body\",\"question\":\"体の調子で、気になるところはありますか？\",\"answer\":\"特にないですよ。元気です\"},{\"questionId\":\"mood\",\"question\":\"今日の気分はいかがですか？\",\"answer\":\"とてもいい気分です。散歩に行こうと思います\"}]}"
+}

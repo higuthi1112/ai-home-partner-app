@@ -1,0 +1,109 @@
+/* ネオン猫アバターの見た目。
+   水色の線画に drop-shadow で発光を付け、状態ごとに動きを変える。 */
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cat-svg {
+  width: 340px;
+  height: auto;
+  max-width: 80vw;
+}
+
+/* 線画の基本スタイル。発光はここでまとめて付ける。 */
+.cat-stroke {
+  fill: none;
+  stroke: #38c6ff;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px #8fe6ff) drop-shadow(0 0 10px #46c8ff);
+}
+
+.cat-whisker {
+  stroke-width: 5;
+}
+
+/* SVG内の要素をtransformで動かすため、原点を各要素の中心にする */
+.cat-group,
+.cat-mouth-speaking {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* 待機: ゆっくり呼吸するように拡大縮小 */
+.avatar-idle .cat-group {
+  animation: catBreathe 3.5s ease-in-out infinite;
+}
+
+/* 傾聴: 少し大きめに脈打つ（聞いている感） */
+.avatar-listening .cat-group {
+  animation: catPulse 1.2s ease-in-out infinite;
+}
+
+/* 発話: 軽く上下に揺れる＋口が開閉する */
+.avatar-speaking .cat-group {
+  animation: catBob 0.9s ease-in-out infinite;
+}
+
+.avatar-speaking .cat-mouth-speaking {
+  animation: catTalk 0.35s ease-in-out infinite;
+}
+
+/* きらりは点滅させる */
+.cat-sparkle {
+  animation: catSparkle 1s ease-in-out infinite;
+}
+
+@keyframes catBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes catPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes catBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes catTalk {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes catSparkle {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}

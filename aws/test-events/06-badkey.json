@@ -1,0 +1,6 @@
+{
+  "_メモ": "わざと合言葉を間違えたリクエスト。403 が返り、かつ CloudWatch Logs に Bedrock / Rekognition を呼んだ形跡が無いことを確認します（＝いたずらリクエストで料金が発生しない、の検証）。★Lambdaを作った直後、いちばん最初に実行するテストです★（SDKの読み込みが成功しているかもこれで分かります）。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"wrong-key-on-purpose\",\"action\":\"analyzeInterview\",\"userId\":\"elder-001\",\"slot\":\"morning\",\"answers\":[{\"questionId\":\"sleep\",\"question\":\"テスト\",\"answer\":\"テスト\"}]}"
+}

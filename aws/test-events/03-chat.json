@@ -1,0 +1,6 @@
+{
+  "_メモ": "雑談の返事を作らせるテスト。CHAT_PROVIDER の設定に応じて Gemini または Bedrock が呼ばれます。CHAT_PROVIDER=none のときは ok:false が返るのが正解です（フロント側は conversation.json のことばで応答します）。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"action\":\"chat\",\"userId\":\"elder-001\",\"text\":\"むかし畑で野菜を作っていてね、トマトがよく採れたんですよ\",\"history\":[]}"
+}

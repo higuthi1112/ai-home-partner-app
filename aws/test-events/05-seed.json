@@ -1,0 +1,6 @@
+{
+  "_メモ": "デモ用の過去14日分（朝晩2回×14日＝28件）のサンプルデータを投入します。平常値55〜66で推移し、直近2日だけ40台に落ちる形になります。★02-interview-warning.json より先に実行してください★（平常値が3日分たまっていないと、誤検知防止のため WARNING を出さない仕様のためです）。発表では必ず「過去分はデモ用のサンプルデータです」と断ってください。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"adminKey\":\"ここにADMIN_KEYと同じ値を書く\",\"action\":\"seed\",\"userId\":\"elder-001\"}"
+}

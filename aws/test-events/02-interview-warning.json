@@ -1,0 +1,6 @@
+{
+  "_メモ": "元気がないときの問診。level が WARNING になり、★ご家族のGmailにメールが届くこと★ を確認します。届いた文面に「うつ」「診断」などの言葉が入っていないことも必ず確認してください（法律上の要請です）。※先に 05-seed.json で平常値を作っておかないと、平常値不足のため WARNING が LOG に下がります。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"action\":\"analyzeInterview\",\"userId\":\"elder-001\",\"slot\":\"morning\",\"answers\":[{\"questionId\":\"sleep\",\"question\":\"昨夜はよく眠れましたか？\",\"answer\":\"あまり眠れませんでした。何度も目が覚めて\"},{\"questionId\":\"meal\",\"question\":\"朝ごはんは召し上がりましたか？\",\"answer\":\"食欲がなくて、ほとんど食べていません\"},{\"questionId\":\"body\",\"question\":\"体の調子で、気になるところはありますか？\",\"answer\":\"腰が痛くて、体がだるいです\"},{\"questionId\":\"mood\",\"question\":\"今日の気分はいかがですか？\",\"answer\":\"あまり元気が出ません。ずっと家にいます\"}]}"
+}

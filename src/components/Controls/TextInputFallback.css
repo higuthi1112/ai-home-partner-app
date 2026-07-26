@@ -1,0 +1,48 @@
+/* 手入力の欄（?debug=1 のときだけ表示される）。
+ *
+ * 以前は position:absolute で bottom:96px に浮かせていたが、
+ * 「話す」ボタンと重なっていた。今は App.css の .app-controls
+ * （画面下部の操作エリア）の中に、ボタンと縦に並べて置いている。
+ * 位置指定を持たせないのがポイント。 */
+
+.text-fallback {
+  display: flex;
+  gap: 8px;
+  width: min(90vw, 420px);
+}
+
+.text-fallback-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 15px;
+  font-family: inherit;
+  color: #14213d;
+}
+
+.text-fallback-input:focus {
+  outline: 2px solid #4c8bf5;
+  outline-offset: 1px;
+}
+
+.text-fallback-input:disabled {
+  opacity: 0.5;
+}
+
+.text-fallback-button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 999px;
+  background: #4c8bf5;
+  color: #fff;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.text-fallback-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

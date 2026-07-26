@@ -1,0 +1,179 @@
+# AIホームパートナー ― アバター会話デモ
+
+高齢者見守りPWA「AIホームパートナー」の中核体験である、**常時待機アバターとの音声会話**部分の
+デモ実装です。ブラウザだけで動き、**AWSなどの外部サービスを一切呼びません**（通信・課金・障害リスクなし）。
+
+> **⚠️ デモ本番は必ず Google Chrome を使ってください。** 音声認識(Web Speech API)の対応が最も安定しています。
+> Safari は挙動が不安定です。
+
+---
+
+## これは何ができるの？
+
+- 起動するとアバターが日本語で話しかけてきます。
+- 「話す」ボタンを押して話しかけると、聞き取って日本語で返事します（会話が往復します）。
+- 「気分が悪い」「助けて」「今日は病院」などの言葉に、専用の反応と画面表示が出ます。
+- 会話に応じて右上の「気分スコア」が変化します。
+- **すべてこのPCの中だけで完結します。インターネットにデータを送りません。**
+
+---
+
+## ローカルで動かす手順
+
+必要なもの: [Node.js](https://nodejs.org/)（v20以上を推奨）と Google Chrome。
+
+```bash
+# 1. このフォルダに移動
+cd ai-home-partner-app
+
+# 2. 必要なライブラリを入れる（初回のみ）
+npm install
+
+# 3. 開発サーバーを起動
+npm run dev
+```
+
+`Local: http://localhost:5173/` と表示されたら、**Chrome** でそのURLを開いてください。
+マイクの使用許可を求められたら「許可」を押します。
+
+止めるときは、ターミナルで `Ctrl + C` を押します。
+
+---
+
+## 動作確認チェックリスト
+
+- [ ] 起動するとアバターが日本語で話しかける。
+- [ ] 「話す」ボタンから話しかけると、聞き取り→日本語で応答が返る。
+- [ ] 応答後、自動でまた聞き取りに戻り、会話が複数回続く。
+- [ ] 主要なセリフが、極端な棒読みでなく落ち着いたトーンで聞こえる。
+- [ ] 「気分が悪い」で「ご家族へ通知しました（デモ）」の表示が出る。
+- [ ] 「助けて」で赤い緊急バナー（閉じるボタン付き）が出る。
+- [ ] 「今日は病院」で「本日 通知オフ」バッジが出る。
+- [ ] 「よく寝た」「疲れた」等で右上の気分スコアが上下する。
+- [ ] 会話内容が `src/data/conversation.json` の編集だけで変えられる（コードを触らずに）。
+- [ ] Chrome DevTools の Network タブで、外部（AWS等）への通信が一切発生しない。
+- [ ] マイク不許可・非対応ブラウザで、画面上部に案内が出る。
+
+---
+
+## 会話の内容を変えたいとき（非エンジニア向け）
+
+`src/data/conversation.json` を編集するだけで、コードを触らずに会話を変えられます。
+
+- `openings` … 起動時の挨拶（ここからランダムで1つ話します）
+- `intents` … 「こういう言葉が来たら、こう返す」の一覧（`keywords`と`responses`）
+- `controlPhrases` … 「病院」「気分が悪い」「助けて」など特別な言葉への反応
+- `fallback` … どれにも当てはまらないときの返事
+
+保存すると、`npm run dev` 中なら自動で画面に反映されます。
+
+---
+
+## 音声を「棒読み」でなく自然にするには（任意）
+
+いまは**ブラウザ内蔵の音声**を使い、速度をやや遅く・句読点で間を空けるなどの調整で
+できるだけ自然に読み上げています（追加費用ゼロ）。
+
+さらに自然にしたい場合は、**セリフごとに事前に作った音声ファイル(MP3)を同梱して再生**できます。
+
+1. Amazon Polly のニューラル音声（日本語 Takumi / Kazuha 等）など、質の高いTTSで
+   セリフのMP3を**開発時に一度だけ**作ります。
+   - ※これは「音声ファイルを作る作業」だけで課金が発生します。**アプリ本番の再生では外部を叩きません。**
+   - 課金を避けたい場合は、無料の音声合成ツールで作ったMP3でも構いません。
+2. 作ったMP3を `src/assets/audio/` に置きます。
+3. `src/assets/audio/manifest.ts` に「セリフ全文 → そのMP3」の対応を追記します。
+
+登録があるセリフはMP3を再生し、無いセリフは自動でブラウザ内蔵の音声にフォールバックします。
+
+---
+
+## GitHub Pages へ公開する手順（無料）
+
+**公開リポジトリなら GitHub Pages の利用は無料**です（課金は発生しません）。
+
+前提: このプロジェクトを GitHub のリポジトリ名 `ai-home-partner-app` として push 済みであること。
+リポジトリ名が違う場合は `vite.config.ts` の `REPO_NAME` と `package.json` の `homepage` を合わせて変更してください。
+
+```bash
+# ビルドして gh-pages ブランチへ公開
+npm run deploy
+```
+
+その後、GitHub のリポジトリ設定 → Pages で、Source を **`gh-pages` ブランチ** に設定します。
+数分後、`https://<ユーザー名>.github.io/ai-home-partner-app/` で公開されます（HTTPSなのでマイクも動きます）。
+
+---
+
+## 技術構成
+
+- **React + Vite + TypeScript**
+- **音声**: ブラウザ標準 Web Speech API（音声認識 `SpeechRecognition` / 音声合成 `speechSynthesis`）
+- **PWA**: `vite-plugin-pwa`（オフラインでも動くよう同梱ファイルをキャッシュ）
+- **状態管理**: React の `useState`（外部ライブラリなし）
+
+### フォルダ構成
+
+```
+src/
+  components/      画面パーツ（見た目。デザイン差し替え用に分離）
+    Avatar/  Captions/  Controls/  StatusBadges/
+  hooks/
+    useSpeechRecognition.ts   音声認識ラッパー
+    useSpeechSynthesis.ts     音声合成ラッパー（MP3再生→ブラウザ音声フォールバック）
+    useConversation.ts        会話全体の制御（ターンテイキング）
+  services/
+    analysisService.ts        気分分析（★モック。将来AWS差し替え）
+    notificationService.ts    通知（★モック。将来AWS差し替え）
+    index.ts                  mock/aws を環境変数で切り替える入口
+  data/
+    conversation.json         会話ツリー（非エンジニアが編集）
+  assets/audio/               事前生成音声（任意）とその対応表 manifest.ts
+  matching.ts                 応答判定ロジック（将来LLM差し替え用に分離）
+  types.ts / App.tsx
+```
+
+---
+
+## 💠 クラウド担当の方へ（今後 AWS 連携を足す場合）
+
+このデモは、**あとから AWS を「差し込むだけ」で拡張できる**よう境界を切ってあります。
+UI やコンポーネントから AWS SDK を直接呼ばず、**必ず `src/services/` 層を経由**する設計です。
+
+### 拡張ポイントは3つだけ
+
+1. **`src/services/analysisService.ts`**（気分・状態分析）
+   - 今: ローカルのキーワード判定によるモック。
+   - 将来: `AnalysisService` インターフェースを満たす **AWS版** を作り、
+     Lambda(Function URL) 経由で Rekognition / Transcribe / Comprehend を呼ぶ実装に差し替え。
+2. **`src/services/notificationService.ts`**（家族への通知）
+   - 今: 画面表示のみのモック（実送信なし）。
+   - 将来: `NotificationService` インターフェースを満たす実装で、Lambda 経由の SNS 通知などに差し替え。
+3. **`src/services/index.ts`**（切り替えの入口）
+   - `.env` の `VITE_BACKEND_MODE` を見て `mock` / `aws` を切り替える想定。
+   - AWS版を作ったら、ここで `mode === 'aws'` のときに AWS 実装を返すよう1行足すだけ。
+
+```
+UI/コンポーネント → hooks（useConversation） → services（ここだけ差し替える）→ (将来) Lambda → AWS各種
+```
+
+`matching.ts`（応答判定）も純粋関数として独立しているので、将来 LLM 呼び出しに差し替え可能です。
+
+### クラウド側の実装の進め方（目安）
+
+1. **Lambda Function URL** を1つ作り、フロントからは `fetch` で叩くだけにする
+   （フロントに AWS SDK を持ち込まない＝キーを埋め込まない）。
+2. `analysisService` / `notificationService` の **AWS版クラスを新規追加**し、
+   インターフェース（メソッド名・引数・戻り値）は現状のモックに合わせる。
+3. `.env` を `VITE_BACKEND_MODE=aws` にして動作確認。`mock` に戻せばいつでもローカル完結に戻せる。
+4. 認証が必要になったら Cognito 等を Lambda 側で受ける（フロントに秘密情報を置かない）。
+
+### 💰 課金についての注意（重要）
+
+- **このデモ自体は完全無料**です。AWS を呼ばず、音声もブラウザ内蔵、GitHub Pages(公開リポジトリ)も無料。
+- AWS を足すと**従量課金が発生**します。特に次に注意してください。
+  - **常時**分析を回さない（このアプリは「話しかけたターンだけ」処理する設計。ここは維持する）。
+  - Rekognition / Comprehend / Transcribe / Polly / SNS はいずれも呼んだ回数・量で課金。
+    起床/就寝などの**スポット処理**に限定するとコストを抑えられる。
+  - **予算アラート**（AWS Budgets）を必ず設定し、無料枠(Free Tier)の範囲と上限を把握しておく。
+  - ライブデモ会場では、意図せぬ課金・障害を避けるため **`VITE_BACKEND_MODE=mock`（＝AWSを呼ばない）** で
+    動かすことを推奨します。

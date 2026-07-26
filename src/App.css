@@ -1,0 +1,78 @@
+/* 画面全体のレイアウトと、非対応ブラウザ案内の見た目。
+ *
+ * ★画面を3つの帯に分けている★
+ *   上部（top: 0〜80px）  … 気分バッジ／通知オフ／緊急バナー
+ *   中央                  … アバター・字幕・問診の結果パネル
+ *   下部（bottom: 0〜160px）… 「話す」ボタン・手入力欄だけ
+ *
+ * 以前は「話す」ボタンと家族通知のトーストが両方とも画面下部中央に来ていて、
+ * 画面の高さが足りないと重なっていた。下部を .app の padding-bottom で
+ * 確保することで、中央の要素がそこまで下りてこないようにしている。
+ */
+
+/* 重なり順のルール。数字はここでまとめて決める（各CSSでバラバラに書かない）。
+ *   0  … 背景
+ *   10 … 通常の要素（アバター・字幕・ボタン）
+ *   20 … 画面に浮かせるもの（バッジ・結果パネル・手入力欄）
+ *   30 … 緊急バナー（常に最前面）
+ */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+
+  /* 上部は帯のぶん、下部は「話す」ボタンの領域を確保する。
+     ここを削ると、画面が低い端末でボタンと他の要素が重なる。 */
+  padding: 88px 32px 32px;
+
+  position: relative;
+  /* 下部の帯（ボタン用）を必ず空けておく */
+  padding-bottom: 160px;
+}
+
+/* 非対応ブラウザ案内（画面上部） */
+.unsupported-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 24px;
+  background: #e63946;
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  z-index: 30;
+}
+
+/* 下部の操作エリア。「話す」ボタンと手入力欄はここに固定する。 */
+.app-controls {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 20;
+}
+
+/* 問診の進み具合（「3 / 5 問目」など）。控えめに出す。 */
+.interview-progress {
+  margin: 0;
+  font-size: 16px;
+  color: #6b7aa0;
+  letter-spacing: 0.04em;
+}
+
+/* 画面が低いときは余白と文字を少し詰める（タブレット横向き・小さいノートPC対策）。 */
+@media (max-height: 700px) {
+  .app {
+    gap: 20px;
+    padding: 72px 24px 140px;
+  }
+}

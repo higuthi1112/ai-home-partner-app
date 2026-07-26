@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RekognitionDetectFaces",
+      "Effect": "Allow",
+      "Action": ["rekognition:DetectFaces"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BedrockInvokeModel",
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DynamoDbEventsTable",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem",
+        "dynamodb:BatchWriteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-1:<ACCOUNT_ID>:table/HomePartnerEvents"
+    },
+    {
+      "Sid": "SnsPublishFamilyAlerts",
+      "Effect": "Allow",
+      "Action": ["sns:Publish"],
+      "Resource": "arn:aws:sns:ap-northeast-1:<ACCOUNT_ID>:home-partner-family-alerts"
+    }
+  ]
+}

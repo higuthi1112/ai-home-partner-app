@@ -1,0 +1,6 @@
+{
+  "_メモ": "家族ダッシュボード用の履歴を取り出します。先に 05-seed.json を実行してサンプルデータを入れておくと、日ごとの朝/夜の元気度と平常値(baseline)が返ります。",
+  "requestContext": { "http": { "method": "POST" } },
+  "isBase64Encoded": false,
+  "body": "{\"appKey\":\"ここにAPP_KEYと同じ値を書く\",\"action\":\"history\",\"userId\":\"elder-001\",\"days\":7}"
+}

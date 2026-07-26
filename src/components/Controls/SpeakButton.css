@@ -1,0 +1,19 @@
+/* 「話す」ボタン。大きなタップ領域で高齢者にも押しやすく。 */
+
+.speak-button {
+  font-size: 28px;
+  font-weight: bold;
+  padding: 24px 64px;
+  border-radius: 999px;
+  border: none;
+  background: #4a86ff;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(74, 134, 255, 0.35);
+  cursor: pointer;
+}
+
+.speak-button:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+  cursor: default;
+}

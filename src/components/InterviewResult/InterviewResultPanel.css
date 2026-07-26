@@ -1,0 +1,114 @@
+/* 問診の結果パネル（画面中央）。
+   高齢者にも見やすいよう、数字を大きく・余白を広くとっている。
+   z-index の意味は App.css の先頭にまとめてある（20 = 画面に浮かせるもの）。 */
+
+.result-panel {
+  position: relative;
+  z-index: 20;
+  width: min(88vw, 460px);
+  padding: 28px 32px 24px;
+  border-radius: 20px;
+  border: 3px solid transparent;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 32px rgba(20, 33, 61, 0.18);
+  text-align: center;
+}
+
+/* レベルごとの色。赤は緊急だけに使い、WARNING は落ち着いたオレンジにする。 */
+.result-good {
+  border-color: #2a9d8f;
+}
+.result-log {
+  border-color: #adb5bd;
+}
+.result-warning {
+  border-color: #f4a261;
+}
+.result-emergency {
+  border-color: #e63946;
+}
+
+.result-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #6b7aa0;
+}
+
+.result-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.result-emoji {
+  font-size: 52px;
+  line-height: 1;
+}
+
+.result-number {
+  font-size: 64px;
+  font-weight: bold;
+  line-height: 1;
+  color: #14213d;
+}
+
+/* ご本人の平常値との比較。ここが「他人と比べていない」ことを示す一番大事な行。 */
+.result-baseline {
+  margin: 4px 0 12px;
+  font-size: 17px;
+  color: #4a86ff;
+  font-weight: bold;
+}
+
+.result-message {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: bold;
+  line-height: 1.5;
+  color: #1e2a4a;
+}
+
+.result-smile {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #6b7aa0;
+}
+
+.result-notified {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #1e2a4a;
+}
+
+/* 必ず入れる注意書き。小さくても消さないこと。 */
+.result-disclaimer {
+  margin: 0 0 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8d99ae;
+}
+
+.result-close {
+  font-size: 18px;
+  font-weight: bold;
+  padding: 12px 40px;
+  border-radius: 999px;
+  border: none;
+  background: #4a86ff;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+@media (max-height: 700px) {
+  .result-panel {
+    padding: 18px 24px 16px;
+  }
+  .result-number {
+    font-size: 48px;
+  }
+  .result-emoji {
+    font-size: 40px;
+  }
+}

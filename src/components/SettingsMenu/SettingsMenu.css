@@ -1,0 +1,149 @@
+/* ハンバーガーボタンと設定パネルの見た目。 */
+
+/* 右上のハンバーガーボタン */
+.menu-button {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #dbe4f5;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(60, 90, 160, 0.12);
+  cursor: pointer;
+  z-index: 30;
+}
+
+.menu-button span {
+  display: block;
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: #4a86ff;
+}
+
+/* 背景の暗幕（クリックで閉じる） */
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 42, 74, 0.35);
+  z-index: 40;
+}
+
+/* 右から出てくる設定パネル */
+.menu-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 85vw);
+  background: #ffffff;
+  box-shadow: -6px 0 24px rgba(30, 42, 74, 0.18);
+  z-index: 50;
+  padding: 32px;
+  animation: menuSlideIn 0.22s ease-out;
+}
+
+@keyframes menuSlideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5ebf7;
+  padding-bottom: 20px;
+}
+
+.menu-title {
+  font-size: 28px;
+  font-weight: bold;
+  margin: 0;
+  color: #1e2a4a;
+}
+
+.menu-close {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  font-size: 32px;
+  line-height: 1;
+  color: #4a86ff;
+  cursor: pointer;
+}
+
+/* 設定パネルの中の区切り（見守りの時刻／いま始める） */
+.menu-section {
+  margin-top: 28px;
+}
+
+.menu-section-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #1e2a4a;
+}
+
+.menu-note {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #6b7aa0;
+}
+
+/* 時刻の入力欄（ラベルと横並び） */
+.menu-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.menu-field-label {
+  font-size: 19px;
+  color: #1e2a4a;
+}
+
+.menu-time {
+  font-size: 22px;
+  font-family: inherit;
+  padding: 8px 12px;
+  border: 1px solid #dbe4f5;
+  border-radius: 10px;
+  color: #1e2a4a;
+  background: #ffffff;
+}
+
+/* 「いま始める」のボタン。高齢者にも押しやすい大きさにする。 */
+.menu-action {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  font-size: 20px;
+  font-weight: bold;
+  font-family: inherit;
+  border: none;
+  border-radius: 14px;
+  background: #4a86ff;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.menu-action:hover {
+  background: #3a76ef;
+}
