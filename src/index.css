@@ -1,6 +1,7 @@
 /* 全体の土台となるスタイル。
    高齢者が使う想定なので、高コントラスト・広い余白を基本にする。
-   各パーツ固有の見た目は、それぞれのコンポーネントのCSSに置いている。 */
+   各パーツ固有の見た目は、それぞれのコンポーネントのCSSに置いている。
+   ※ドット柄の背景は DotGridBackground コンポーネントが担当する（main.tsxで描画）。 */
 
 * {
   box-sizing: border-box;
@@ -14,10 +15,7 @@ body,
 }
 
 body {
-  /* 明るい白〜淡色の背景に、うっすらドット柄を敷く */
-  background-color: #f5f8ff;
-  background-image: radial-gradient(circle, #c3d3f5 1.4px, transparent 1.5px);
-  background-size: 24px 24px;
+  background-color: #f8fbff;
   color: #1e2a4a;
   font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
 }

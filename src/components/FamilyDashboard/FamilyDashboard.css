@@ -1,0 +1,223 @@
+/* 家族向けダッシュボード。App.css とは別入口（#family）なので、
+   色や余白は本体アプリ（index.css）と同じ基調に合わせつつ、こちらは
+   タブレットよりスマホでの閲覧を想定して縦に積むレイアウトにしている。 */
+
+.family-dashboard {
+  /* ★position: relative が必須★
+     DotGridBackground（画面最奥、position: fixed; z-index: 0）より必ず手前に
+     描画されるようにするための指定。位置指定のない要素は、CSSの重なり順の規則上
+     「z-index:0で位置指定された要素」より奥に描かれてしまい、背景の下に
+     コンテンツが隠れてしまう（実際に発生した不具合）。App.css の .app と同じ対策。 */
+  position: relative;
+  z-index: 1;
+
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.family-loading {
+  text-align: center;
+  margin-top: 40vh;
+  font-size: 18px;
+  color: #6b7aa0;
+}
+
+.family-header h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+  color: #14213d;
+}
+
+.family-sub {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7aa0;
+}
+
+.family-baseline,
+.family-chart,
+.family-alerts {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 24px rgba(20, 33, 61, 0.1);
+}
+
+.family-baseline-label {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #6b7aa0;
+}
+
+.family-baseline-value {
+  margin: 0;
+  font-size: 40px;
+  font-weight: bold;
+  color: #4a86ff;
+}
+
+.family-baseline-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #8d99ae;
+}
+
+.family-section-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #14213d;
+}
+
+.family-empty {
+  margin: 0;
+  font-size: 14px;
+  color: #8d99ae;
+}
+
+/* 棒グラフ。外部ライブラリを使わず divの高さだけで表現する。
+   14本を横幅いっぱいに詰めようとすると日付ラベルの分だけ縮みきらず、
+   カードの外にはみ出してしまう。列幅を固定し、収まらない分はカード内だけで
+   横スクロールさせる（画面全体が横に広がらないようにする）。 */
+.family-chart {
+  overflow-x: auto;
+}
+
+.family-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  /* スコアの数字ぶん高さを追加した（もとは140px）。 */
+  height: 164px;
+  min-width: min-content;
+}
+
+.family-bar-col {
+  flex: 0 0 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+/* 日ごとのスコア（棒の上の数字）。 */
+.family-bar-score {
+  font-size: 11px;
+  font-weight: bold;
+  color: #14213d;
+  margin-bottom: 4px;
+}
+
+.family-bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: #eef2fb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.family-bar-fill {
+  width: 100%;
+  min-height: 3px;
+  border-radius: 6px 6px 0 0;
+}
+
+.family-bar-label {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #8d99ae;
+}
+
+/* レベルごとの色。「注意が必要（WARNING/EMERGENCY）」だけは
+   InterviewResultPanel と同じ赤系統のまま残し、目立たせる。
+   それ以外（ふだんどおり・元気）は黄色系にした。 */
+.level-good {
+  background: #ffb703;
+}
+.level-log {
+  background: #ffd166;
+}
+.level-warning {
+  background: #f4a261;
+}
+.level-emergency {
+  background: #e63946;
+}
+
+.family-alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.family-alert-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 4px solid #adb5bd;
+  background: #f5f8ff;
+}
+
+.family-alert-item.level-warning {
+  border-left-color: #f4a261;
+}
+.family-alert-item.level-emergency {
+  border-left-color: #e63946;
+}
+.family-alert-item.level-good {
+  border-left-color: #2a9d8f;
+}
+
+.family-alert-time {
+  font-size: 12px;
+  color: #8d99ae;
+}
+
+.family-alert-message {
+  font-size: 15px;
+  color: #1e2a4a;
+}
+
+.family-last-conversation {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7aa0;
+  text-align: center;
+}
+
+.family-disclaimer {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8d99ae;
+  text-align: center;
+}
+
+.family-mode-badge {
+  align-self: center;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #ffffff;
+  opacity: 0.7;
+}
+
+.family-mode-badge.mode-aws {
+  background: #2a9d8f;
+}
+
+.family-mode-badge.mode-mock {
+  background: #8d99ae;
+}

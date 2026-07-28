@@ -20,7 +20,8 @@ export default defineConfig(({ command }) => ({
       manifest: {
         name: 'AIホームパートナー アバター会話デモ',
         short_name: 'ホームパートナー',
-        description: '高齢者見守り向け 常時待機アバターの音声会話デモ（ローカル完結・外部通信なし）',
+        description:
+          '高齢者見守り向け 常時待機アバターの音声会話アプリ。日常の会話は端末内で完結し、朝晩の問診のときだけクラウドのAIが体調の変化を見守ります。',
         lang: 'ja',
         display: 'standalone',
         background_color: '#14213d',

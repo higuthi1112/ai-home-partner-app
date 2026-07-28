@@ -1,16 +1,25 @@
 /* ネオン猫アバターの見た目。
    水色の線画に drop-shadow で発光を付け、状態ごとに動きを変える。 */
 
+/* ★画面の高さが足りないとき、縮んでよいのはこのアバターだけ★
+   flex: 1 で余った高さを引き受け、足りなければ自分が小さくなる。
+   こうしておくと、字幕やボタンを画面外へ押し出さずに済む（App.css 参照）。
+   min-height: 0 が無いと flex アイテムは中身より小さくなれず、縮まない。 */
 .avatar {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 .cat-svg {
-  width: 340px;
+  width: 420px;
   height: auto;
-  max-width: 80vw;
+  max-width: 78vw;
+  /* 高さが足りないときは、縦横比を保ったままここで縮む。 */
+  max-height: 100%;
 }
 
 /* 線画の基本スタイル。発光はここでまとめて付ける。 */

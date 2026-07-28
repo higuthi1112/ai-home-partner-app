@@ -1,0 +1,64 @@
+/* カメラの小さなプレビュー。
+ *
+ * ★position:absolute を使わない★
+ *   App.css の .app（flex縦並び・中央寄せ）の中の、ふつうの1要素として置く。
+ *   align-self だけで右端に寄せており、他の絶対配置の要素（バッジ・ボタン等）と
+ *   物理的に重なりようがない。以前の「トーストとボタンが同じ場所を取り合う」
+ *   バグを繰り返さないための意図的な選択。
+ */
+
+.camera-preview {
+  /* .camera-off-hint を内側に絶対配置するための基準点にする。
+     （position:relative がないと App.css の .app 基準になってしまう） */
+  position: relative;
+  align-self: flex-end;
+  width: 96px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 12px rgba(20, 33, 61, 0.25);
+  background: #1e2a4a;
+  flex-shrink: 0;
+  transition:
+    width 0.3s ease,
+    height 0.3s ease;
+}
+
+/* 笑顔チェック中は拡大して、今何をしているのか伝える。 */
+.camera-preview-expanded {
+  width: 168px;
+  height: 126px;
+  border-color: #4a86ff;
+}
+
+/* 画面が低いときは拡大幅を抑える。ここが大きいとアバターがその分だけ縮む。 */
+@media (max-height: 700px) {
+  .camera-preview {
+    width: 80px;
+    height: 60px;
+  }
+
+  .camera-preview-expanded {
+    width: 120px;
+    height: 90px;
+  }
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 自分を鏡のように見せる（左右反転）。セルフィーで見慣れた見え方にする。 */
+  transform: scaleX(-1);
+}
+
+.camera-off-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  opacity: 0.5;
+}

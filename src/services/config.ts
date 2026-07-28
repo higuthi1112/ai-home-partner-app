@@ -12,6 +12,8 @@
 //   ?backend=aws  … AWSを使う
 //   ?sync=1       … 分析結果を待ってから返事をする方式に切り替える
 //   ?debug=1      … 手入力の欄を出す（マイクが使えないときの保険）
+//   ?ack=off      … 問診の相槌をやめる（もたつくときの退避）
+//   ?rate=1.2     … アバターの話す速さを変える（1.0が標準・大きいほど速い）
 
 export type BackendMode = 'mock' | 'aws'
 
@@ -31,6 +33,16 @@ function readOverride(key: string): string | null {
 // .env で指定された既定値。
 const envMode = (import.meta.env.VITE_BACKEND_MODE ?? 'mock') as BackendMode
 const lambdaUrl = (import.meta.env.VITE_LAMBDA_URL ?? '').trim()
+
+// アバターの話す速さ。1.0 が標準で、大きいほど速い。
+// ★変な値が入っても事故にならないよう、必ず 0.5〜2.0 に収める★
+//   （0以下だと発話が止まり、大きすぎると聞き取れなくなるため）
+const DEFAULT_SPEECH_RATE = 1.0
+function toSpeechRate(value: string | undefined | null): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SPEECH_RATE
+  return Math.max(0.5, Math.min(2.0, n))
+}
 
 // URLの指定があればそれを優先。
 const requested = (readOverride('backend') as BackendMode | null) ?? envMode
@@ -65,6 +77,18 @@ export const config = {
   // カメラを使うかどうか。カメラの無いPCで開発するときは .env で off にする。
   cameraEnabled: (import.meta.env.VITE_CAMERA ?? 'on') !== 'off',
 
+  // 問診の途中に「相槌」を挟むかどうか。
+  // 相槌はあくまで演出なので、当日もたつくようなら off にして切り離せる。
+  //   .env で VITE_ACK=off
+  //   または URL に ?ack=off を付ける（その場で切れる）
+  acknowledgeEnabled:
+    readOverride('ack') !== 'off' && (import.meta.env.VITE_ACK ?? 'on') !== 'off',
+
   // 手入力の欄を出すか（マイクが使えないときの保険）。
   debugInput: readOverride('debug') === '1',
+
+  // アバターの話す速さ（1.0が標準・大きいほど速い）。
+  // 高齢者向けなので速くしすぎないこと。当日リハーサルで
+  //   ?rate=1.3 のようにURLで試して、ちょうどよい値を .env に書き戻すのがおすすめ。
+  speechRate: toSpeechRate(readOverride('rate') ?? import.meta.env.VITE_SPEECH_RATE),
 } as const

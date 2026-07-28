@@ -1,13 +1,21 @@
 /* 字幕。特大フォント・高コントラストで見やすく。 */
 
+/* ★字幕は絶対に縮ませない（flex-shrink: 0）★
+   画面が狭いときに縮むのはアバターだけ、という約束（App.css 参照）。
+   min-height を置いているのは、セリフの長さが変わるたびに
+   アバターの大きさが上下にガタつくのを抑えるため。 */
 .captions {
   text-align: center;
   max-width: 700px;
-  min-height: 140px;
+  /* この余白ぶんだけアバターが小さくなるので、必要最小限にとどめる。 */
+  min-height: 116px;
+  flex-shrink: 0;
 }
 
 .caption-avatar {
-  font-size: 28px;
+  /* 画面が低いときは自動的に小さくなる（長いセリフでも4行に収める）。
+     clamp(最小, 画面の高さに比例, 最大) の形。 */
+  font-size: clamp(21px, 3.2vh, 28px);
   font-weight: bold;
   line-height: 1.5;
   margin: 0 0 12px;
@@ -19,4 +27,16 @@
   color: #6b7aa0;
   min-height: 32px;
   margin: 0;
+}
+
+/* 画面が低いときは、字幕の予約領域も詰めてアバターに高さを回す。 */
+@media (max-height: 700px) {
+  .captions {
+    min-height: 92px;
+  }
+
+  .caption-user {
+    font-size: 18px;
+    min-height: 24px;
+  }
 }

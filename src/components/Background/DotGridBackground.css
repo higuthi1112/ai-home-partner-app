@@ -1,0 +1,30 @@
+/* インタラクティブなドットグリッド背景。
+   画面の一番奥(z-index: 0)に固定表示し、他の要素はすべてこの上に乗る。 */
+
+.dot-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #f8fbff;
+  overflow: hidden;
+}
+
+.dot-bg-base,
+.dot-bg-hover {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: 18px 18px;
+}
+
+/* ベース層: 常に見えている小さいドット。 */
+.dot-bg-base {
+  background-image: radial-gradient(circle, rgba(157, 200, 255, 0.52) 1.2px, transparent 1.3px);
+}
+
+/* ホバー層: 約1.8倍の大きいドット。マスクで隠れているので、
+   普段は透明で、カーソル周辺の円形部分だけ(script側でmask-imageを設定)見える。 */
+.dot-bg-hover {
+  background-image: radial-gradient(circle, rgba(157, 200, 255, 0.52) 2.16px, transparent 2.3px);
+  transition: opacity 0.15s ease-out;
+}

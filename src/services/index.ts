@@ -14,6 +14,12 @@ import { createMockAnalysisService, type AnalysisService } from './analysisServi
 import { createAwsAnalysisService } from './awsAnalysisService'
 import { createMockNotificationService, type NotificationService } from './notificationService'
 import { createAwsNotificationService } from './awsNotificationService'
+import {
+  createAwsChatService,
+  createMockChatService,
+  createNullChatService,
+  type ChatService,
+} from './chatService'
 
 const useAws = config.backendMode === 'aws'
 
@@ -25,9 +31,17 @@ export const notificationService: NotificationService = useAws
   ? createAwsNotificationService()
   : createMockNotificationService()
 
+// 雑談の返事と問診の相槌を作るサービス。
+// ?ack=off / VITE_ACK=off のときは、相槌も雑談も作らない実装にすげ替える。
+export const chatService: ChatService = !config.acknowledgeEnabled
+  ? createNullChatService()
+  : useAws
+    ? createAwsChatService()
+    : createMockChatService()
+
 // どのモードで動いているかをコンソールに出しておく（当日の事故防止）。
 console.log(
-  `[services] backend=${config.backendMode} / 分析の待ち方=${config.analysisSync ? '同期' : '非同期'}`,
+  `[services] backend=${config.backendMode} / 分析の待ち方=${config.analysisSync ? '同期' : '非同期'} / 相槌=${config.acknowledgeEnabled ? 'あり' : 'なし'}`,
 )
 
 // 画面（StatusBadges のモード表示など）から使えるように公開しておく。

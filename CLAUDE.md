@@ -158,9 +158,13 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
 台本（質問文・挨拶・締めのことば）は `conversation.json` の `interview` にある。
 起動は設定画面の時刻、または「いま問診を始める」ボタン（**デモ当日の生命線**）。
 
-**【雑談モード】問診以外の時間・端末内で完結**
+問診の**2問目以降は、直前の回答に「相槌」を打ってから次の質問**を読む（`chatService.acknowledge()`）。
+**相槌は演出であって進行の条件ではない**。失敗・タイムアウト（2.5秒）したら黙って質問だけを読む。
+`?ack=off` または `VITE_ACK=off` で丸ごと切れる（当日もたつくときの退避）。
+
+**【雑談モード】問診以外の時間**
 `matchInput()` でキーワード判定 → 当たれば即答（遅延ゼロ・ネット不要）。
-外れたら `fallback`。将来ここが Gemini / Bedrock の雑談に差し替わる（`CHAT_PROVIDER`）。
+外れたら `chatService.reply()`（Gemini / Bedrock）→ 作れなければ `conversation.json` の `fallback`。
 
 ### 制御フレーズの action と動作
 
@@ -200,12 +204,13 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
       `chat` = Gemini/Bedrock切替、日次カウンター）＋ AWS担当への依頼文
 
 **残り**
-- [ ] **Git init → GitHub → `npm run deploy` → 実URL確定**（ユーザー作業・**全体の律速**）
+- [x] Git init → GitHub → `npm run deploy` → **実URL確定**（2026-07-26。§11参照）
+- [x] `useCamera` / `CameraPreview`（笑顔撮影が実際に動く。「話す」ボタンでカメラ起動→問診の最後で撮影）
+- [x] 家族ダッシュボード + `#family` ハッシュ切替（`FamilyDashboard` コンポーネント・`main.tsx` で振り分け。mockの`history()`で動作確認済み）
+- [x] 時刻による問診の自動起動を配線（`useConversation.ts` に追加。`watchSchedule.ts` の関数を60秒ごとに確認し、
+      発話中（`speaking`）と問診中以外なら自動起動。Playwrightで「通常時刻では起動しない／見守り時刻では自動起動する」の両方を確認済み）
 - [ ] AWS担当: Budgets → **Bedrock利用申請** → DynamoDB → SNS → Lambda → CORS
-- [ ] `useCamera` / `CameraPreview`（笑顔撮影。今は「撮れなかった」で素通り）
 - [ ] 初結合（**CORSデーとして丸一日確保**）
-- [ ] 家族ダッシュボード + `#family` ハッシュ切替
-- [ ] 時刻による問診の自動起動を配線（`watchSchedule.ts` は作成済み・未接続）
 - [ ] 実機デー / 表現ルール総点検 / ドキュメント修正
 - [ ] 通しリハーサル + **90秒バックアップ動画を収録**
 
@@ -221,6 +226,15 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
   `startListeningRef.current` を毎描画で再代入することで最新版を保っている。
   「無駄な再生成だ」と思って memo 化すると**古い閉包を掴んで会話が壊れる**。
 - **ブラウザ差**: 音声認識はChrome前提。Web Speech APIは非対応/権限拒否時に画面上部で案内。
+- **★本人画面は絶対にスクロールさせない★**（2026-07-27追加）。高齢者が「話す」ボタンを探して
+  スクロールする状態にしてはいけない。`App.css` の `.app` は `height: 100dvh` ＋ `overflow: hidden`。
+  **ここを `min-height` に戻すと、字幕が長いときにボタンが画面外へ出る**（実際にそうなっていた）。
+  高さが足りないとき縮んでよいのは**アバターだけ**（`.avatar { flex: 1; min-height: 0 }` ＋
+  `.cat-svg { max-height: 100% }`）。字幕・結果パネル・ボタンは `flex-shrink: 0` で必ず守る。
+  `.app-controls` は以前 `position: absolute` ＋ `padding-bottom: 160px` だったが、
+  「160pxあれば足りる」という決め打ちが崩れる構造だったため、**通常フローの最後の要素**に変更した。
+  → **余白（`gap`・`padding`）を足すと、その分そのままアバターが小さくなる**ことに注意。
+  変更したら 1024×768 / 390×844 / 360×640 / 1280×600 で「縦スクロールなし」を必ず確認すること。
 
 ### クラウド連携で新たに増えたもの
 - **非同期分析には連番ガードが要る**: ターン1の遅い結果がターン2の速い結果の後に届くと
@@ -237,6 +251,20 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
   会話は復活しない。→ **手入力フォールバック**（`?debug=1`）が当日の最後の砦。
 - **画像を CloudWatch Logs に出力しない**。ログに残ると「画像は保存しません」が嘘になる。
   `console.log` してよいのは `imageBase64.length` だけ。
+- **カメラは「話す」ボタンを押した瞬間に起動し、つなぎっぱなしにする**（`useCamera.ts`）。
+  `getUserMedia` は許可確認に0.5〜2秒かかるため、「笑ってください」の直前に呼ぶと
+  演出が間に合わない。`start()` は起動済みなら何もしないので何度呼んでも安全。
+- **カメラプレビューは `position: absolute` を使わない**（`CameraPreview.css`）。
+  `.app` の通常のflexレイアウトに乗せ `align-self: flex-end` で右に寄せているだけ。
+  絶対配置にすると、以前の「トーストとボタンが重なる」バグを別の場所で再現しかねない。
+  新しい浮遊要素を足すときは、まずこの方式で足せないか検討すること。
+- **カメラは `audio: false` で開く**（`useCamera.ts`）。マイク（音声認識）と競合させないため。
+- **相槌（`chatService.acknowledge()`）を問診の「進行条件」にしない**。
+  必ず「相槌が返ってきたら付ける／返ってこなければ質問だけ読む」の形を保つこと。
+  ここをawaitで待ち切る作りに変えると、**Wi-Fiが遅い会場で問診が止まる**。
+  タイムアウトは雑談より短い2.5秒（`ACK_TIMEOUT_MS`）にしてある。
+- **相槌のプロンプトは「質問するな」を強く書く**（`aws/index.mjs` の `ACK_SYSTEM`）。
+  相槌の直後に必ず次の質問が続くため、相槌が質問で終わると**質問が2つ連続**して不自然になる。
 
 ## 10. 今後やること（TODO）
 
@@ -262,8 +290,9 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
 
 ## 11. 未確定・要確認事項
 
-- **GitHub リポジトリ名と公開URL（Day0で確定させる。ここが決まらないと CORS が設定できない）**。
-  `vite.config.ts` の `REPO_NAME` と `package.json` の `homepage` を一致させること。
+- ~~GitHub リポジトリ名と公開URL~~ → **2026-07-26 確定済み。**
+  `https://higuthi1112.github.io/ai-home-partner-app/`（`gh-pages` へのデプロイ確認済み）。
+  AWS担当へのCORS設定値（オリジンのみ）: `https://higuthi1112.github.io`
 - 事前生成音声（MP3）の作成手段と素材。
 - アバターのデザインカンプ（Figma）の提供時期。
 - 会場のネットワーク事情（Wi-Fi の有無・速度）。テザリングの予備回線を必ず用意する。
@@ -272,16 +301,34 @@ Bedrock の Claude が全回答＋笑顔スコア＋本人の平常値を読ん�
 
 次のセッションが探し回らずに済むよう、**AWS担当が構築したら必ずここを埋める**こと。
 
+**2026-07-28 初結合成功。** フロント（ブラウザ）から実際にLambdaを叩き、Bedrockの判定結果が
+画面に出るところまで確認済み。
+
 | 項目 | 値 |
 |---|---|
 | リージョン | `ap-northeast-1`（東京）※全リソース統一 |
-| DynamoDB テーブル | `HomePartnerEvents`（PK=`userId` / SK=`sk` / TTL=`expiresAt`） |
-| SNS トピック | `home-partner-family-alerts` / ARN: `（記入）` |
-| Lambda 関数名 | `（記入）` / Node.js 22.x / 512MB / タイムアウト10秒 / 予約同時実行2 |
-| Function URL | `（記入）` ← `.env` の `VITE_LAMBDA_URL` に入れる |
+| DynamoDB テーブル | `HomePartnerEvents`（PK=`userId` / SK=`sk` / TTL=`expiresAt`）✅動作確認済み |
+| SNS トピック | `home-partner-family-alerts` / ARN: `（記入）` ※通知の発報は動作確認済み |
+| Lambda 関数名 | `（記入）` / Node.js 22.x |
+| **`BEDROCK_MODEL_ID`** | `jp.anthropic.claude-haiku-4-5-20251001-v1:0`（**日本の推論プロファイル形式**。素のモデルIDだと `ValidationException` になるため、この `jp.` 付きが正解） |
+| **Function URL** | `https://gjz77qsmch6jhfssvso6z4pzfi0jbqli.lambda-url.ap-northeast-1.on.aws/` |
 | Lambda 実行ロール | `（記入）` |
-| GitHub Pages URL | `（記入）` ← CORS の `AllowOrigins` にはオリジンのみ書く |
+| GitHub Pages URL | `https://higuthi1112.github.io`（CORSにはこのオリジンのみ。パスを含めない） |
+| **CORS の Allow origin** | ✅ `https://higuthi1112.github.io` と `http://localhost:5173` の両方が設定済み |
+| `APP_KEY` | `.env` の `VITE_APP_KEY` を参照。ビルド成果物に埋め込まれる＝**公開情報** |
+| `ADMIN_KEY` | **★このリポジトリに書かないこと★** Lambdaの環境変数を直接見る（`seed` 専用） |
 | AWS Budgets | ¥1 でアラート設定済み？ `（記入）` |
+
+**初結合で確認できたこと（2026-07-28）**
+- ✅ 認証（`APP_KEY`）／CORS（ブラウザから200が返る）／DynamoDB読み書き
+- ✅ **Bedrock が観察表現の日本語を生成**（例:「今朝も変わりなくお過ごしのようですね。」）
+- ✅ SNS の発報記録あり／平常値 58・サンプル13日分（`seed` 実行済み＝WARNING判定が可能な状態）
+- ✅ `?backend=mock` の退避経路が生きている（Lambdaへの通信が1本も出ないことを確認）
+- ⚠️ **`CHAT_PROVIDER` が未設定**（既定の `none`）。雑談と相槌がAI無しで動いている。
+  → 雑談は `conversation.json` の `fallback`、相槌は無言スキップに自動で落ちるため**壊れてはいない**。
+  AI雑談を使うなら Lambda に `CHAT_PROVIDER=gemini` と `GEMINI_API_KEY` の設定が必要。
+- ✅ **Rekognition も検証済み**（実機のカメラで笑顔スコア96を取得。元気度79・level=GOOD まで通った）
+  → **AWSの全経路が繋がった状態**。残るは `CHAT_PROVIDER` のみ。
 
 **設計の要点**
 - **1テーブル設計**。`sk` のプレフィックスで用途を分ける:

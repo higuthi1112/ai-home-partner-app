@@ -16,6 +16,7 @@ import TextInputFallback from './components/Controls/TextInputFallback'
 import StatusBadges from './components/StatusBadges/StatusBadges'
 import SettingsMenu from './components/SettingsMenu/SettingsMenu'
 import InterviewResultPanel from './components/InterviewResult/InterviewResultPanel'
+import CameraPreview from './components/Camera/CameraPreview'
 import { useConversation } from './hooks/useConversation'
 import { config } from './services'
 import conversationData from './data/conversation.json'
@@ -34,11 +35,15 @@ function App() {
     mood,
     badges,
     interview,
+    camera,
     clearEmergency,
     onSpeakButton,
     submitText,
     startInterview,
   } = useConversation(data)
+
+  // 笑顔チェック中だけカメラプレビューを拡大する（今何をしているか伝える）。
+  const smileChecking = interview.state === 'asking' && interview.question?.type === 'smile'
 
   // ボタンの文言は状態に応じて変える。
   const buttonLabel =
@@ -60,6 +65,10 @@ function App() {
       <SettingsMenu onStartInterview={startInterview} />
 
       <StatusBadges mood={mood} badges={badges} onCloseEmergency={clearEmergency} />
+
+      {/* カメラの小さなプレビュー。通常のレイアウトの流れに乗せ、align-selfで
+          右端に寄せているだけなので、絶対配置の他の要素と重なりようがない。 */}
+      <CameraPreview camera={camera} expanded={smileChecking} />
 
       <Avatar state={avatarState} />
 

@@ -8,6 +8,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { audioManifest } from '../assets/audio/manifest'
+// ※ services/index.ts ではなく config.ts を直接読む。
+//   index.ts を読むとAWSサービスの生成まで走ってしまうため。
+import { config } from '../services/config'
 
 export interface UseSpeechSynthesis {
   isSupported: boolean
@@ -71,6 +74,10 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
     const voice = pickNaturalVoice()
     const chunks = splitIntoChunks(text)
 
+    // 句読点ごとの「間」。話す速さに反比例させる（速くしたら間も詰める）。
+    // 標準(1.0)で120ms、1.2なら100ms。短くしすぎると棒読みになるので下限を置く。
+    const pauseMs = Math.max(60, Math.round(120 / config.speechRate))
+
     let chunkIndex = 0
     let finished = false
     let safetyTimer = 0
@@ -92,12 +99,16 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
       chunkIndex += 1
       utterance.lang = 'ja-JP'
       if (voice) utterance.voice = voice
-      utterance.rate = 0.95 // 少しゆっくりめで落ち着いたトーンに
+      // 話す速さは config で決める（?rate=1.3 のようにURLでその場でも変えられる）。
+      utterance.rate = config.speechRate
       utterance.pitch = 1.0
       utteranceRef.current = utterance // GC対策
 
       // 次の塊との間に短い「間」を空けてから読む。
-      utterance.onend = () => window.setTimeout(speakNext, 120)
+      // ★この「間」も体感速度に効く★
+      //   句読点ごとに区切って読むので、長いセリフほど積み重なる。
+      //   話す速さを上げたら「間」も比例して短くしないと、速くなった感じがしない。
+      utterance.onend = () => window.setTimeout(speakNext, pauseMs)
       utterance.onerror = finish
 
       // onend/onerror が発火しないブラウザ不具合の保険（塊ごとに延長）。
