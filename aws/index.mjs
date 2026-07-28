@@ -397,11 +397,23 @@ function normalizeLevel(level) {
 }
 
 // =====================================================================
-// 【7】雑談の返事を作る
+// 【7】雑談の返事・問診の相槌を作る
 // =====================================================================
+// このひとつの窓口で2つの仕事をします。body.mode で切り替えます。
+//   （指定なし）      … 雑談の返事。ひとこと返して、興味を持って聞き返す。
+//   mode:"acknowledge" … 問診の途中で挟む「相槌」。質問はせず、受け止めるだけ。
+//
+// ★相槌が失敗しても、アプリの問診は止まりません★
+//   フロント側は返事が無ければ黙って次の質問へ進むので、
+//   ここは「言えたら言う」くらいの気持ちで構いません。
 async function handleChat(body, userId) {
   const text = String(body.text ?? '').trim()
   if (!text) return respond(200, { ok: false, error: 'テキストが空です' })
+
+  // 相槌モードかどうか。お願い文（システムプロンプト）だけを差し替える。
+  const isAck = body.mode === 'acknowledge'
+  const system = isAck ? ACK_SYSTEM : CHAT_SYSTEM
+  const label = isAck ? 'chat/相槌' : 'chat/雑談'
 
   // 「使わない」設定なら、AIを呼ばずにすぐ帰る。
   // フロントは返事が無いと conversation.json のことばで応答します。
@@ -409,25 +421,34 @@ async function handleChat(body, userId) {
     return respond(200, { ok: false, error: '雑談機能は使用しない設定です' })
   }
 
-  // お金（と無料枠）の見張り。
+  // お金（と無料枠）の見張り。雑談も相槌も同じ枠で数えます。
   const allowed = await consumeDailyQuota(userId, 'chat', DAILY_LIMIT_CHAT)
   if (!allowed) {
-    console.warn('[chat] 本日の上限に達したため応答しませんでした')
+    console.warn(`[${label}] 本日の上限に達したため応答しませんでした`)
     return respond(200, { ok: false, error: '本日の会話回数の上限に達しました' })
   }
 
-  const history = Array.isArray(body.history) ? body.history.slice(-6) : []
+  // 相槌は「直前の一言」だけを見れば十分なので、会話の履歴は渡しません。
+  const history = isAck ? [] : Array.isArray(body.history) ? body.history.slice(-6) : []
 
   try {
     const reply =
       CHAT_PROVIDER === 'gemini'
-        ? await chatWithGemini(text, history)
-        : await chatWithBedrock(text, history)
+        ? await chatWithGemini(text, history, system)
+        : await chatWithBedrock(text, history, system)
 
     if (!reply) return respond(200, { ok: false, error: '返事を作れませんでした' })
-    return respond(200, { ok: true, reply: sanitize(reply, 'そうなんですね。もう少し聞かせてください。') })
+
+    // 禁止語が混ざっていたら差し替える（両モード共通の最後の砦）。
+    // 相槌は無理に言う必要がないので、危なければ「言わない」を選びます。
+    const safe = isAck
+      ? sanitize(reply, '') // 空文字 = 相槌なしとして扱われる
+      : sanitize(reply, 'そうなんですね。もう少し聞かせてください。')
+
+    if (!safe) return respond(200, { ok: false, error: '返事を作れませんでした' })
+    return respond(200, { ok: true, reply: safe })
   } catch (err) {
-    console.error('[chat] 応答の生成に失敗しました', err)
+    console.error(`[${label}] 応答の生成に失敗しました`, err)
     return respond(200, { ok: false, error: '返事を作れませんでした' })
   }
 }
@@ -442,7 +463,30 @@ const CHAT_SYSTEM = `
 ・絵文字は使わないでください（読み上げると不自然になるため）。
 `.trim()
 
-async function chatWithGemini(text, history) {
+// 問診の途中で挟む「相槌」のときの、AIへのお願い文。
+// ★このあと必ず次の質問が続きます★ 相槌が質問をしてしまうと
+// 「質問が2つ続く」不自然な会話になるので、そこを強く禁じています。
+const ACK_SYSTEM = `
+あなたは高齢者の見守りアプリのアバターです。
+これから相手の返事を渡すので、それに対する「相槌」だけを日本語で返してください。
+
+守ってほしいこと:
+・20〜30文字くらいの、みじかい一言だけにしてください。
+・★絶対に質問をしないでください★ このあと別の質問が続くためです。
+　（「〜ですか？」「〜はどうですか？」のような形で終わらないこと）
+・相手の言ったことを受け止めて、やさしく共感してください。
+・むずかしい言葉やカタカナ語は使わないでください。
+・病名を出したり、診断のようなことを言ったりしないでください。
+・絵文字は使わないでください（読み上げると不自然になるため）。
+・相槌の言葉だけを返し、説明や前置きは書かないでください。
+
+良い例:
+　入力「あまり眠れませんでした」→ 出力「それは、おつらかったですね。」
+　入力「ごはんはしっかり食べました」→ 出力「しっかり食べられて何よりです。」
+`.trim()
+
+// system には CHAT_SYSTEM（雑談）か ACK_SYSTEM（相槌）が渡ってきます。
+async function chatWithGemini(text, history, system) {
   if (!GEMINI_API_KEY) {
     console.warn('[chat] GEMINI_API_KEY が未設定です')
     return null
@@ -462,7 +506,7 @@ async function chatWithGemini(text, history) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: CHAT_SYSTEM }] },
+        systemInstruction: { parts: [{ text: system }] },
         contents,
         generationConfig: { maxOutputTokens: 120 },
       }),
@@ -483,7 +527,8 @@ async function chatWithGemini(text, history) {
   return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null
 }
 
-async function chatWithBedrock(text, history) {
+// system には CHAT_SYSTEM（雑談）か ACK_SYSTEM（相槌）が渡ってきます。
+async function chatWithBedrock(text, history, system) {
   if (!BEDROCK_MODEL_ID) {
     console.warn('[chat] BEDROCK_MODEL_ID が未設定です')
     return null
@@ -505,7 +550,7 @@ async function chatWithBedrock(text, history) {
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: 150,
-        system: CHAT_SYSTEM,
+        system,
         messages,
       }),
     }),
