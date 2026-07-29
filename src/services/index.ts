@@ -14,12 +14,7 @@ import { createMockAnalysisService, type AnalysisService } from './analysisServi
 import { createAwsAnalysisService } from './awsAnalysisService'
 import { createMockNotificationService, type NotificationService } from './notificationService'
 import { createAwsNotificationService } from './awsNotificationService'
-import {
-  createAwsChatService,
-  createMockChatService,
-  createNullChatService,
-  type ChatService,
-} from './chatService'
+import { createAwsChatService, createMockChatService, type ChatService } from './chatService'
 
 const useAws = config.backendMode === 'aws'
 
@@ -31,17 +26,22 @@ export const notificationService: NotificationService = useAws
   ? createAwsNotificationService()
   : createMockNotificationService()
 
-// 雑談の返事と問診の相槌を作るサービス。
-// ?ack=off / VITE_ACK=off のときは、相槌も雑談も作らない実装にすげ替える。
-export const chatService: ChatService = !config.acknowledgeEnabled
-  ? createNullChatService()
-  : useAws
-    ? createAwsChatService()
-    : createMockChatService()
+// 雑談の返事を作るサービス。
+//
+// ★2026-07-28 変更: このサービスは「雑談」専用になった★
+//   問診の相槌はAIをやめ、端末内で選ぶようにしたため（matching.ts の
+//   pickAcknowledgement を useConversation が直接呼ぶ）。
+//   以前はここで ?ack=off のときに雑談まで止めていたが、
+//   ?ack=off は「相槌をやめる」設定であって雑談を止める設定ではないので、
+//   相槌の判定を useConversation 側へ移したのに合わせて切り離した。
+//   AIを丸ごと止めたいときは ?backend=mock を使う（外部通信ゼロになる）。
+export const chatService: ChatService = useAws
+  ? createAwsChatService()
+  : createMockChatService()
 
 // どのモードで動いているかをコンソールに出しておく（当日の事故防止）。
 console.log(
-  `[services] backend=${config.backendMode} / 分析の待ち方=${config.analysisSync ? '同期' : '非同期'} / 相槌=${config.acknowledgeEnabled ? 'あり' : 'なし'}`,
+  `[services] backend=${config.backendMode} / 分析の待ち方=${config.analysisSync ? '同期' : '非同期'} / 相槌=${config.acknowledgeEnabled ? 'あり（端末内で選択）' : 'なし'}`,
 )
 
 // 画面（StatusBadges のモード表示など）から使えるように公開しておく。

@@ -1,62 +1,52 @@
-// 「短い自然文をAIに作らせる」仕事をまとめたサービス。
+// 雑談の返事をAIに作ってもらうサービス。
 //
-// 2つの用途があります。どちらも性質が同じなので1つのファイルにまとめています。
-//   reply()       … 雑談の返事。キーワードに当たらなかったときに使う。
-//   acknowledge() … 問診の途中で挟む「相槌」。回答を受け止める一言。
+// ★このファイルは「雑談」専用です（2026-07-28 変更）★
+//   以前は問診の「相槌」もここで扱っていましたが、相槌はAIをやめ、
+//   端末内で選ぶようにしました。相槌の実装は次の2つにあります。
+//     ・語彙 … src/data/conversation.json の acknowledgements
+//     ・選ぶ処理 … src/matching.ts の pickAcknowledgement()
+//   やめた理由（詳しくは matching.ts のコメント）:
+//     1. 1〜1.5秒の待ちが質問と質問の間に入り、問診がもたつく
+//     2. AIが「〜ですか？」と質問を返し、質問が2つ並ぶ事故が起きる
+//     3. 禁止語（CLAUDE.md §2.5）が混ざる可能性をゼロにできない
+//   ※Lambda 側には相槌用の受け口（mode:"acknowledge"）が残してあります。
+//     提出後にAIの相槌へ戻すときは、そこを呼ぶだけで済みます。
 //
-// ★どちらも「できなければ null を返す」約束です★
-//   呼び出し側は null が返ってきたら、
-//     雑談 … conversation.json の fallback のことばで返す
-//     相槌 … 何も言わずに次の質問へ進む
-//   ようにしてあります。つまりクラウドが落ちても会話・問診は止まりません。
+// ★reply() は「できなければ null を返す」約束です★
+//   呼び出し側（useConversation）は null が返ってきたら
+//   conversation.json の fallback のことばで返します。
+//   つまりクラウドが落ちても、Wi-Fiが切れても、会話は止まりません。
 
 import { postToLambda } from './apiClient'
 
 export interface ChatService {
-  /** 雑談の返事。null = 応答できなかった（呼び出し側が fallback に落とす）。 */
+  /**
+   * 雑談の返事を作る。
+   * @param text 本人の発言
+   * @param history 直前までのやりとり（「本人→アバター→本人→…」の交互）
+   * @returns 返事。null = 作れなかった（呼び出し側が fallback に落とす）
+   */
   reply(text: string, history: string[]): Promise<string | null>
-
-  /** 問診の回答に対する一言の相槌。null = 生成できなかった（無言でスキップ）。 */
-  acknowledge(answerText: string): Promise<string | null>
 }
-
-// 相槌を待つ時間の上限（ミリ秒）。
-// ★雑談より短くしています★
-//   相槌は「質問と質問の間」に挟まるので、ここで長く待つと
-//   問診全体がもたついて感じられてしまうためです。
-//   間に合わなければ相槌をあきらめて、すぐ次の質問へ進みます。
-const ACK_TIMEOUT_MS = 2500
-
-// モックが返す相槌の候補。AWSが無くても相槌つきの問診を試せるようにしておく。
-// ※本番（aws）ではAIが回答の内容に合わせて作るので、この定型文は使われません。
-const MOCK_ACKS = [
-  'そうなんですね。',
-  'なるほど、教えてくださってありがとうございます。',
-  'そうでしたか。',
-  'よくわかりました。',
-]
 
 // Lambda の chat アクションから返ってくる形。
 interface ChatResponse {
   reply: string
 }
 
+// モック実装（?backend=mock のとき）。
+// AIがいないので雑談の返事は作れません。常に null を返し、
+// 呼び出し側が conversation.json の fallback を使ってくれます。
+// ※外部通信ゼロを保証する経路なので、ここで通信を足さないこと。
 export function createMockChatService(): ChatService {
   return {
-    // モックでは雑談の返事を作れない（AIがいない）ので、常に null。
-    // 呼び出し側が conversation.json の fallback を使ってくれます。
     async reply() {
       return null
-    },
-
-    // 相槌は定型文からランダムに選ぶ。少し待って「考えている」感じを出す。
-    async acknowledge() {
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      return MOCK_ACKS[Math.floor(Math.random() * MOCK_ACKS.length)]
     },
   }
 }
 
+// AWS実装（?backend=aws のとき）。Lambda 経由で Gemini / Bedrock を呼びます。
 export function createAwsChatService(): ChatService {
   return {
     async reply(text, history) {
@@ -64,33 +54,6 @@ export function createAwsChatService(): ChatService {
       // 失敗しても例外は出ません（apiClient が必ず ok:false で返すため）。
       if (!res.ok || !res.data?.reply) return null
       return res.data.reply
-    },
-
-    async acknowledge(answerText) {
-      const trimmed = answerText.trim()
-      if (!trimmed) return null
-
-      const res = await postToLambda<ChatResponse>(
-        'chat',
-        { text: trimmed, mode: 'acknowledge' },
-        // ★待ち時間を短くする★（既定の config.timeoutMs より短い）
-        ACK_TIMEOUT_MS,
-      )
-      if (!res.ok || !res.data?.reply) return null
-      return res.data.reply
-    },
-  }
-}
-
-// 雑談も相槌も使わない設定（?ack=off / VITE_ACK=off）のときに使う実装。
-// 「AIを呼ばない」ことをはっきりさせるため、あえて別の実装として用意しています。
-export function createNullChatService(): ChatService {
-  return {
-    async reply() {
-      return null
-    },
-    async acknowledge() {
-      return null
     },
   }
 }

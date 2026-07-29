@@ -6,7 +6,9 @@
       "Bash(git add *)",
       "Bash(git reset *)",
       "Bash(git --no-pager diff --cached --stat)",
-      "Bash(grep -E \"^\\(dist|\\\\.env$\\)\")"
+      "Bash(grep -E \"^\\(dist|\\\\.env$\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(npm run *)"
     ]
   }
 }

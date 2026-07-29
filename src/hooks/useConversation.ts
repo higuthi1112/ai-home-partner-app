@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AvatarState, ConversationData, InterviewSlot, Mood } from '../types'
-import { matchInput, pickRandom } from '../matching'
+import { matchInput, pickAcknowledgement, pickRandom, softenChatReply } from '../matching'
 import { analysisService, notificationService, chatService, config } from '../services'
 import type { MoodState } from '../services/analysisService'
 import { useSpeechSynthesis } from './useSpeechSynthesis'
@@ -98,6 +98,11 @@ export function useConversation(data: ConversationData): UseConversation {
   // 雑談の流れ（直近のやりとり）。AIに文脈を渡すために覚えておく。
   // 「ユーザー, アバター, ユーザー, アバター…」の順に入れ、直近6件だけ保つ。
   const chatHistoryRef = useRef<string[]>([])
+
+  // 雑談が何往復続いたか。conversation.json の chat.maxTurns に達したら
+  // 締めのことばを添えて 0 に戻す（＝次の雑談はまた1ターン目から始まる）。
+  // 質問を許すターンを決めるのにも使う。詳しくは types.ts の ChatFlowConfig。
+  const chatTurnRef = useRef<number>(0)
 
   // startListening と speakAndListen が互いを呼び合うため、ref 経由で最新を参照する。
   const startListeningRef = useRef<() => void>(() => {})
@@ -251,16 +256,51 @@ export function useConversation(data: ConversationData): UseConversation {
         //   AIに渡す会話は「ユーザー→AI→ユーザー→AI…」と交互である必要があり、
         //   user が2回続くとAIに拒否されて返事が返らなくなる。
         const historyBefore = chatHistoryRef.current
+
+        // ★雑談の進み具合を数える（2026-07-29 追加）★
+        //   AIは毎回「〜ですか？」と質問を返してくる（CHAT_SYSTEM がそう指示している）。
+        //   高齢のご本人には尋問されている感じになって疲れるので、
+        //   「何ターン目に質問を許すか」をアプリ側で決め打ちにする。
+        //   AIに「3回に1回だけ質問して」と頼んでも守られないため、後から消す方式にした。
+        const flow = data.chat
+        const turn = chatTurnRef.current + 1
+        chatTurnRef.current = turn
+
+        // このターンは質問を許すか（既定では1ターン目だけ）。
+        const allowQuestion = !flow || turn === flow.askQuestionOnTurn
+        // このターンで雑談を一区切りにするか。
+        const isLastTurn = !!flow && turn >= flow.maxTurns
+
         chatService
           .reply(text, historyBefore)
           .then((aiReply) => {
-            const reply = aiReply ?? pickRandom(data.fallback)
             // ★発言と返事は必ず「対」で履歴に足す★
             //   AIが答えられなかった回に発言だけを足すと、以降ずっと
             //   交互の並びが崩れたままになり、雑談が復活しなくなる。
+            //   ※履歴にはAIの元の返事（質問つき）を入れる。加工後を入れると、
+            //     AIから見て自分の発言が書き換わっていることになり文脈が濁る。
             if (aiReply) {
               chatHistoryRef.current = [...historyBefore, text, aiReply].slice(-6)
             }
+
+            // AIが答えられなければ conversation.json の fallback で返す。
+            // fallback は元から質問を含まないので、加工しない。
+            if (!aiReply) {
+              runAnalysis(text, 'neutral', pickRandom(data.fallback))
+              return
+            }
+
+            // 質問を許さないターンなら、末尾の疑問文を落として共感だけ残す。
+            // 削った残りが短すぎるときは、相槌の語彙で温かく言い直す（softenChatReply）。
+            let reply = allowQuestion ? aiReply : softenChatReply(aiReply, text, data)
+
+            // 最後のターンなら締めのことばを添えて、次の雑談を最初から始められるようにする。
+            if (isLastTurn && flow.closing.length > 0) {
+              reply = `${reply} ${pickRandom(flow.closing)}`
+              chatTurnRef.current = 0
+              chatHistoryRef.current = []
+            }
+
             runAnalysis(text, 'neutral', reply)
           })
           .catch(() => {
@@ -309,28 +349,28 @@ export function useConversation(data: ConversationData): UseConversation {
     }
 
     // ── 2問目以降: 直前の回答に相槌を打ってから質問する ──
-    // ★相槌は「あれば嬉しい」程度のものとして扱う★
-    //   失敗しても・遅くても、質問だけを読み上げて必ず先へ進む。
-    //   進行が相槌の成否に左右されないことが、この設計でいちばん大事な点。
+    //
+    // ★相槌はAIに作らせず、端末内で選ぶ（2026-07-28 変更）★
+    //   以前はここでLambda経由でAIに相槌を作らせ、2.5秒待っていた。
+    //   やめた理由は3つ。
+    //     1. 待ち時間。1〜1.5秒かかり、会場のWi-Fiではさらに延びる。
+    //        相槌は質問と質問の間に入るので、ここで待つと問診全体がもたつく。
+    //     2. AIが質問を返してしまう事故。相槌の直後には必ず次の質問が続くため、
+    //        相槌が「〜ですか？」で終わると質問が2つ並んで不自然になる。
+    //        「質問するな」と指示しても、守られる保証がない。
+    //     3. 禁止語（CLAUDE.md §2.5）が混ざる可能性を、ゼロにできない。
+    //   相槌は一言受け止めるだけのものなので、確実さを取った。
+    //   語彙は conversation.json の acknowledgements にある（非エンジニアが編集可）。
+    //   ※AIによる相槌は提出後の改良項目。Lambda側の受け口は残してある。
+    //
+    // 同期処理になったので、待ちもタイムアウトも無く、必ず1回で読み上げられる。
     const previousAnswer = lastAnswerRef.current
     lastAnswerRef.current = '' // 同じ回答に二度相槌を打たないよう、使ったら消す
 
-    if (!previousAnswer) {
-      askQuestion(q.text)
-      return
-    }
+    // ?ack=off / VITE_ACK=off のときは相槌を挟まない（当日もたつくときの退避）。
+    const ack = config.acknowledgeEnabled ? pickAcknowledgement(previousAnswer, data) : null
 
-    chatService
-      .acknowledge(previousAnswer)
-      .then((ack) => {
-        // 相槌が間に合ったら「相槌 → 質問」、だめなら質問だけ。
-        askQuestion(ack ? `${ack} ${q.text}` : q.text)
-      })
-      .catch(() => {
-        // ここには来ない想定（chatService は例外を投げない約束）だが、
-        // 万一のときも問診が止まらないよう受け止めておく。
-        askQuestion(q.text)
-      })
+    askQuestion(ack ? `${ack} ${q.text}` : q.text)
     // 質問が変わったときだけ動かす。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interview.state, interview.question?.id])
@@ -404,6 +444,10 @@ export function useConversation(data: ConversationData): UseConversation {
       spokenQuestionRef.current = null
       // 前回の問診の回答が残っていると、1問目から的外れな相槌が出てしまう。
       lastAnswerRef.current = ''
+      // 雑談の途中で問診が始まることがある。数えを持ち越すと、問診のあとの雑談が
+      // いきなり「3ターン目（＝すぐ締める）」から始まってしまうのでここで戻す。
+      chatTurnRef.current = 0
+      chatHistoryRef.current = []
       interview.start(slot)
       void camera.start()
     },
