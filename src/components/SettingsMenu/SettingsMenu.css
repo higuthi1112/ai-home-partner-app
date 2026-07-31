@@ -48,6 +48,26 @@
   z-index: 50;
   padding: 32px;
   animation: menuSlideIn 0.22s ease-out;
+
+  /* ★中身がはみ出したらスクロールできるようにする（2026-07-31 修正）★
+     これが無いと、画面の低い端末で下の項目に手が届かなくなる。
+     実際 iPhone で「朝の問診」より下が読めず、スクロールもできなかった。
+     ※本人画面（.app）はスクロール禁止だが、ここは別。設定は項目が増えるので
+       スクロールできないと詰む。禁止しているのは「話すボタンを探させないこと」。 */
+  overflow-y: auto;
+  /* iOS で慣性スクロールを効かせる（古いSafari向けだが害はない）。 */
+  -webkit-overflow-scrolling: touch;
+
+  /* ★iOS Safari 対策★
+     iOS では 100vh や top/bottom:0 の領域にアドレスバー・ツールバーの裏側が含まれ、
+     いちばん下がツールバーに隠れて操作できないことがある。
+     dvh（実際に見えている高さ）で上限を決めて、確実に画面内に収める。 */
+  max-height: 100dvh;
+
+  /* いちばん下の項目がツールバーぎりぎりに来ないよう、下に余白を足す。 */
+  padding-bottom: 64px;
+  /* ホームバーのある端末では、その分だけさらに空ける。 */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 @keyframes menuSlideIn {
