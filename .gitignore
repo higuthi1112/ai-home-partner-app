@@ -19,6 +19,17 @@ dev-dist
 #   .gitignore は「うっかり共有しない」ための衛生であって、秘密の防御ではない。
 .env
 
+# 学校へ提出する費用見積もりの資料（公式サイトのスクリーンショット等）。
+# アプリの動作には関係せず、画像が大きいのでリポジトリには入れない。
+見積もり資料/
+
+# Claude Code の「個人のローカル設定」。
+# 許可したコマンドがそのまま記録されるため、うっかり合言葉などが
+# 混ざることがある（実際に APP_KEY 入りの curl が記録されていた）。
+# チームで共有するものではないので、リポジトリには入れない。
+# ※ .claude/launch.json のほうは共有してよい設定なので、あえて残している。
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

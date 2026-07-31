@@ -13,6 +13,7 @@
 //   ?sync=1       … 分析結果を待ってから返事をする方式に切り替える
 //   ?debug=1      … 手入力の欄を出す（マイクが使えないときの保険）
 //   ?ack=off      … 問診の相槌をやめる（もたつくときの退避）
+//   ?followup=off … 問診の「追いかけ質問」をやめて、台本の固定文だけにする
 //   ?rate=1.2     … アバターの話す速さを変える（1.0が標準・大きいほど速い）
 
 export type BackendMode = 'mock' | 'aws'
@@ -86,6 +87,14 @@ export const config = {
 
   // 手入力の欄を出すか（マイクが使えないときの保険）。
   debugInput: readOverride('debug') === '1',
+
+  // 問診の3問目を「AIが作った追いかけ質問」に差し替えるか。
+  // ★当日の退避スイッチ★
+  //   本番でどんな質問が出るかは事前に確認できない。
+  //   おかしな質問が出たら ?followup=off を付ければ、その場で台本の固定文に戻せる。
+  //   （?followup=off 付きのURLをブックマークしておくこと）
+  followUpEnabled:
+    readOverride('followup') !== 'off' && (import.meta.env.VITE_FOLLOWUP ?? 'on') !== 'off',
 
   // アバターの話す速さ（1.0が標準・大きいほど速い）。
   // 高齢者向けなので速くしすぎないこと。当日リハーサルで

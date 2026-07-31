@@ -41,6 +41,19 @@ export interface HistoryDay {
   smileScore: number | null
   sentiment: string | null
   level: AlertLevel
+
+  // その日の笑顔写真の「ありか」。写真そのものは重いのでここには入れず、
+  // 画面が必要になったときに getPhoto() で1枚ずつ取りに行く。
+  // 写真は7日で自動的に消えるので、それより前の日は null になる。
+  photoSk?: string | null
+
+  // ▼ ご家族のダッシュボードに出す、その日のご様子（AIがまとめた文章）。
+  //   ★ご本人の画面には出さない★
+  //     ご本人には短いねぎらいの一言だけを見せる方針です。
+  //     詳しい話を本人が読むと、かえって不安を大きくしてしまうため。
+  bodyNote?: string | null // 体の様子
+  moodNote?: string | null // お気持ちの様子
+  suggestions?: string[] | null // ご家族がいま取れること
 }
 
 // 家族ダッシュボードに出すデータ一式。
@@ -80,6 +93,12 @@ export interface AnalysisService {
 
   // 家族ダッシュボード用の履歴。
   history(days: number): Promise<HistorySummary>
+
+  // 笑顔の写真を1枚だけ取ってくる（家族ダッシュボードのサムネイル用）。
+  // 引数は history() が返した photoSk。
+  // ★見つからないときは null を返すこと（例外を投げない）。★
+  //   写真は7日で自動的に消えるので、「無い」のは異常ではなく普通の状態です。
+  getPhoto(photoSk: string): Promise<string | null>
 }
 
 // スコアから絵文字を決める。
@@ -193,12 +212,17 @@ export function createMockAnalysisService(): AnalysisService {
 
       // ★画面に出す文章は必ず「観察」の言い回しにすること（CLAUDE.md §2.5）。
       //   病名や「診断」という語は使わない。
+      //
+      // ★長さは本番（Bedrock）に合わせて50文字程度にすること★
+      //   ここが短いと、画面の作り込みのときに「ちょうどよく収まっている」と
+      //   勘違いしてしまい、本番でだけ文字があふれます。
+      //   本番のお願い文では「ねぎらい＋やさしい気遣いを一言、50文字以内」と指示しています。
       const message =
         level === 'WARNING'
-          ? `いつもより元気度が低めです（いつもは ${baseline} くらい）`
+          ? `いつもより元気度が低めのようです。無理なさらず、ゆっくりお過ごしくださいね。`
           : level === 'GOOD'
-            ? '今日はお元気そうです'
-            : 'いつもどおりの様子です'
+            ? `今日はお元気そうで何よりです。その調子で今日もお過ごしくださいね。`
+            : `いつもどおりのご様子ですね。今日もゆっくりお過ごしくださいね。`
 
       return {
         vitality,
@@ -229,6 +253,26 @@ export function createMockAnalysisService(): AnalysisService {
           smileScore: vitality + Math.floor(Math.random() * 6) - 3,
           sentiment: low ? 'NEGATIVE' : 'POSITIVE',
           level: levelFromScore(vitality),
+          // モックにも文章を入れておく。
+          // ★AWSが無くても画面の作り込みができるようにするための仮の文章です。★
+          //   本番では Bedrock が回答と表情を読んで、その日ごとに書き分けます。
+          ...(low
+            ? {
+                bodyNote:
+                  '昨夜はあまり眠れなかったとのことです。腰の重さも続いているようです。（モック）',
+                moodNote:
+                  'お声は落ち着いていましたが、笑顔は控えめでした。少しお疲れかもしれません。（モック）',
+                suggestions: [
+                  'お電話で、腰の具合を聞いてみてください',
+                  '眠れているか、さりげなく聞いてみてください',
+                  '同じ様子が続くようでしたら、かかりつけの先生に相談することも考えてみてください',
+                ],
+              }
+            : {
+                bodyNote: 'よく眠れていて、お食事もとれているとのことです。（モック）',
+                moodNote: '笑顔も見られ、いつもどおりのご様子でした。（モック）',
+                suggestions: ['お変わりないようです。お電話で近況を聞いてみてはいかがでしょう'],
+              }),
         })
       }
 
@@ -251,6 +295,15 @@ export function createMockAnalysisService(): AnalysisService {
         ],
         lastConversationAt: new Date(Date.now() - 1800000).toISOString(),
       }
+    },
+
+    // モックでは写真を持たない。
+    // ★ここで偽の画像を作らないこと★
+    //   `?backend=mock` は「外部通信ゼロで全機能が動く」ことを示すための退避経路です。
+    //   写真が出ないぶん画面は寂しくなりますが、モックなのに写真があるほうが
+    //   デモの説明として不誠実になります（画面は「撮影なし」と正直に出します）。
+    async getPhoto() {
+      return null
     },
   }
 }

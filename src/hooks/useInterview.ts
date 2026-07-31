@@ -41,8 +41,15 @@ export interface UseInterview {
 
   /** 問診を始める。台本が無い時間帯を指定した場合は何も起きない。 */
   start: (slot: InterviewSlot) => void
-  /** 声で答えてもらう質問に回答する。聞き取れなければ空文字でよい。 */
-  answerText: (text: string) => void
+  /**
+   * 声で答えてもらう質問に回答する。聞き取れなければ空文字でよい。
+   * @param askedQuestion 実際に読み上げた質問文。
+   *   3問目はAIの「追いかけ質問」に差し替わることがあるため、
+   *   **台本の文ではなく実際に尋ねた文**を記録に残す必要がある。
+   *   （分析するAIは「何を聞いたか」が分からないと回答を解釈できない）
+   *   省略したら台本の文を使う。
+   */
+  answerText: (text: string, askedQuestion?: string) => void
   /** 笑顔の質問に答える。撮れなかったときは null を渡す。 */
   answerSmile: (imageBase64: string | null) => void
   /** 途中でやめる（緊急時など）。 */
@@ -148,11 +155,18 @@ export function useInterview(data: ConversationData): UseInterview {
   )
 
   const answerText = useCallback(
-    (text: string) => {
+    (text: string, askedQuestion?: string) => {
       const q = questionsRef.current[indexRef.current]
       if (!slotRef.current || !q) return
       // 質問文も一緒に記録する。分析するとき文脈がないと判断できないため。
-      recordAndAdvance({ questionId: q.id, question: q.text, answer: text.trim() })
+      // ★実際に読み上げた文があればそちらを優先する★
+      //   AIの追いかけ質問に差し替わった場合、台本の文を記録すると
+      //   「聞いていない質問」と回答が対になってしまい、分析が的外れになる。
+      recordAndAdvance({
+        questionId: q.id,
+        question: askedQuestion?.trim() || q.text,
+        answer: text.trim(),
+      })
     },
     [recordAndAdvance],
   )

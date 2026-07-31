@@ -27,6 +27,28 @@ import { useInterview, type UseInterview } from './useInterview'
 import { useCamera, type UseCamera } from './useCamera'
 import { currentSlot, isDoneToday, loadWatchTimes, markDoneToday } from '../services/watchSchedule'
 
+// アバターが話し終わってから、聞き取りを始めるまでの待ち時間（ミリ秒）。
+//
+// ★0にしてはいけない★
+//   speechSynthesis の onend は「読み終わった」時点で発火するが、
+//   スピーカーから出た音の残響はまだ空気中に残っている。
+//   待たずに聞き始めると、その残響を「ご本人の声」として拾ってしまい、
+//   何も言っていないのに問診が進む（2026-07-29 に実機で発生）。
+//   長くすると会話のテンポが悪くなるので、短めから始めて実機で詰めること。
+const LISTEN_DELAY_MS = 400
+
+// ───────── AIの「追いかけ質問」で使う質問ID ─────────
+// conversation.json の interview.questions に付けてある id と対応する。
+//
+// 「この質問の回答をもとに作り」→「この質問と差し替える」という関係。
+// 朝は sleep（昨夜はよく眠れましたか？）、夜は day（今日はどんな一日でしたか？）が
+// 1問目なので、両方を先読みのきっかけとして見る。
+const FIRST_QUESTION_FOR_FOLLOWUP = 'sleep'
+const FIRST_QUESTION_FOR_FOLLOWUP_EVENING = 'day'
+
+// 差し替える対象（3問目「体の調子で、気になるところはありますか？」）。
+const FOLLOWUP_TARGET_ID = 'body'
+
 // 画面に出す「通知オフ」バッジなどの状態。
 export interface StatusBadges {
   notificationsSuppressed: boolean // 「本日 通知オフ」バッジ
@@ -95,6 +117,27 @@ export function useConversation(data: ConversationData): UseConversation {
   // 聞き取りのコールバックから書き込まれるので、state ではなく ref に持つ。
   const lastAnswerRef = useRef<string>('')
 
+  // ★AIが作った「追いかけ質問」を置いておく場所★
+  //   1問目に答えた瞬間に裏で作り始め、3問目を読むときにここを見る。
+  //   空なら台本の固定文を読む（＝失敗しても問診は止まらない）。
+  const followUpRef = useRef<string>('')
+
+  // 直前に「実際に読み上げた」質問文。
+  //   3問目はAIの質問に差し替わることがあるため、記録には台本の文ではなく
+  //   こちらを残す。そうしないと「聞いていない質問」と回答が対になってしまう。
+  const spokenTextRef = useRef<string>('')
+
+  // いま聞き取り結果を受け付けてよいか。
+  //
+  // ★アバターの声を自分で拾わないための歯止め★
+  //   recognition.stop() だけでは足りない。stop() は非同期で、
+  //   直前に取り込んだ音の認識結果があとから届くことがあるため。
+  //   「聞いている状態のときに届いた結果だけを使う」と決めておけば、
+  //   どの経路から来た結果でも確実に弾ける。
+  //   ※state ではなく ref。認識のコールバックは傾聴開始時点の閉包を掴むので、
+  //     state だと古い値を読んでしまう（moodRef と同じ理由）。
+  const acceptInputRef = useRef<boolean>(false)
+
   // 雑談の流れ（直近のやりとり）。AIに文脈を渡すために覚えておく。
   // 「ユーザー, アバター, ユーザー, アバター…」の順に入れ、直近6件だけ保つ。
   const chatHistoryRef = useRef<string[]>([])
@@ -112,8 +155,15 @@ export function useConversation(data: ConversationData): UseConversation {
     if (!recognition.isSupported) return
     setAvatarState('listening')
     setUserCaption('')
+    // ★ここから先の聞き取り結果だけを受け付ける★（下の acceptInputRef の説明を参照）
+    acceptInputRef.current = true
     recognition.start({
       onResult: (text, isFinal) => {
+        // ★アバターの声を自分で拾ってしまう事故を防ぐ★
+        //   聞き取り中でないときに届いた結果は、すべて捨てる。
+        //   閉じ損ねた古いセッションや、スピーカーの残響が「回答」として
+        //   扱われると、ご本人が何も言っていないのに問診が進んでしまう。
+        if (!acceptInputRef.current) return
         setUserCaption(text)
         if (isFinal) handleUserSpeech(text)
       },
@@ -127,16 +177,33 @@ export function useConversation(data: ConversationData): UseConversation {
   startListeningRef.current = startListening
 
   // セリフをしゃべり、しゃべり終わったら指定の処理へ進む。
+  //
+  // ★アバターが話している間は、絶対に聞き取りを受け付けない★（2026-07-29 修正）
+  //   以前はここで聞き取りを止めていなかったため、アバターの声をマイクが拾い、
+  //   ご本人が何も言っていないのに問診が進んでしまう不具合があった。
+  //   （CLAUDE.md §9 には「speak() 前に stop() する」と書いてあったが、
+  //     実装がそうなっていなかった。）
+  //   対策は2つ重ねてある。片方だけでは漏れる。
+  //     1. recognition.stop() … 動いているセッションを閉じる
+  //     2. acceptInputRef=false … 閉じ損ねたセッションから結果が届いても捨てる
+  //   なお「話の途中で口をはさむ」機能は元から無い（聞き取りは発話後に始まる）ので、
+  //   これで失われる機能はない。
   const speakThen = useCallback(
     (text: string, after: () => void) => {
+      acceptInputRef.current = false
+      recognition.stop()
       setAvatarState('speaking')
       setAvatarCaption(text)
       synth.speak(text, () => {
         setAvatarState('idle')
-        after()
+        // ★すぐに聞き始めない★
+        //   speechSynthesis の onend は「読み終わった」時点で発火するが、
+        //   スピーカーから出た音の残響はまだ空気中に残っている。
+        //   ここで一拍おかないと、その残響を自分の声として拾ってしまう。
+        window.setTimeout(after, LISTEN_DELAY_MS)
       })
     },
-    [synth],
+    [synth, recognition],
   )
 
   // セリフをしゃべり、しゃべり終わったら自動でまた傾聴に戻る（ターンテイキング）。
@@ -188,6 +255,10 @@ export function useConversation(data: ConversationData): UseConversation {
   // 聞き取った言葉への対応。問診中か雑談中かで処理が分かれる。
   const handleUserSpeech = useCallback(
     (text: string) => {
+      // 1回分の発言を受け取ったので、次に startListening するまでは何も受け付けない。
+      // Chrome は stop() のあとにも、取り込み済みの音の認識結果を追加で届けることがある。
+      // それを2回目の発言として扱うと、問診が2問ぶん飛ぶ。
+      acceptInputRef.current = false
       recognition.stop()
 
       const result = matchInput(text, data)
@@ -205,7 +276,32 @@ export function useConversation(data: ConversationData): UseConversation {
         // それ以外はすべて「回答」として貯める。ここでは通知も分析もしない。
         // 次の質問の前に相槌を作れるよう、回答の中身だけ覚えておく。
         lastAnswerRef.current = text
-        interview.answerText(text)
+
+        // ★ここで「追いかけ質問」を先読みする（今回の設計の肝）★
+        //   1問目に答えたこの瞬間に、裏でAIに質問を作らせ始める。**待たない。**
+        //   実際に使うのは3問目なので、その間に2問目の読み上げと聞き取り
+        //   （10〜15秒）が挟まる。AIの往復は2〜3秒なので確実に間に合う。
+        //   ＝ 問診がもたつかない。これが相槌をAIにやらせてやめた理由への答え。
+        //   間に合わなかった場合も、台本の固定文が読まれるだけで問診は止まらない。
+        const askedNow = interview.question
+        const isFirstQuestion =
+          askedNow?.id === FIRST_QUESTION_FOR_FOLLOWUP ||
+          askedNow?.id === FIRST_QUESTION_FOR_FOLLOWUP_EVENING
+        if (config.followUpEnabled && askedNow && isFirstQuestion) {
+          chatService
+            .followUpQuestion(askedNow.text, text)
+            .then((q) => {
+              // null なら差し替えない（台本どおりに進む）。
+              if (q) followUpRef.current = q
+            })
+            .catch(() => {
+              // ここには来ない想定（chatService は例外を投げない約束）だが、
+              // 万一のときも問診が止まらないよう受け止めておく。
+            })
+        }
+
+        // 実際に読み上げた文を渡す（3問目はAIの質問に差し替わっていることがある）。
+        interview.answerText(text, spokenTextRef.current)
         return
       }
 
@@ -326,6 +422,16 @@ export function useConversation(data: ConversationData): UseConversation {
     const script = interview.slot ? data.interview?.[interview.slot] : null
     const isFirst = interview.questionNumber === 1
 
+    // ★AIの「追いかけ質問」があれば、台本の文と差し替える★
+    //   1問目に答えた時点で裏で作り始めているので、ここに届いていることが多い。
+    //   間に合わなかった・作れなかった・内容が不正だった場合は空のままなので、
+    //   台本の固定文がそのまま読まれる（＝問診は絶対に止まらない）。
+    const questionText =
+      q.id === FOLLOWUP_TARGET_ID && followUpRef.current ? followUpRef.current : q.text
+
+    // 実際に読み上げた文を覚えておく（回答を記録するときに使う）。
+    spokenTextRef.current = questionText
+
     // 質問を読み上げて、そのあと聞き取り（または撮影）へ進む。
     const askQuestion = (line: string) => {
       speakThen(line, () => {
@@ -370,7 +476,8 @@ export function useConversation(data: ConversationData): UseConversation {
     // ?ack=off / VITE_ACK=off のときは相槌を挟まない（当日もたつくときの退避）。
     const ack = config.acknowledgeEnabled ? pickAcknowledgement(previousAnswer, data) : null
 
-    askQuestion(ack ? `${ack} ${q.text}` : q.text)
+    // questionText は上で決めた「実際に読み上げる文」（AIの追いかけ質問または台本の文）。
+    askQuestion(ack ? `${ack} ${questionText}` : questionText)
     // 質問が変わったときだけ動かす。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interview.state, interview.question?.id])
@@ -440,10 +547,16 @@ export function useConversation(data: ConversationData): UseConversation {
   // ボタンを押す操作自体がユーザー操作なので、ここでもカメラを起動しておく。
   const startInterview = useCallback(
     (slot: InterviewSlot) => {
+      acceptInputRef.current = false
       recognition.stop()
       spokenQuestionRef.current = null
       // 前回の問診の回答が残っていると、1問目から的外れな相槌が出てしまう。
       lastAnswerRef.current = ''
+      // ★前回の追いかけ質問を必ず捨てる★
+      //   残っていると、今日の回答と関係のない質問（昨日の腰の話など）を
+      //   3問目でいきなり尋ねてしまう。
+      followUpRef.current = ''
+      spokenTextRef.current = ''
       // 雑談の途中で問診が始まることがある。数えを持ち越すと、問診のあとの雑談が
       // いきなり「3ターン目（＝すぐ締める）」から始まってしまうのでここで戻す。
       chatTurnRef.current = 0

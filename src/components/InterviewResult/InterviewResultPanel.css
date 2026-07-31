@@ -103,14 +103,55 @@
   cursor: pointer;
 }
 
+/* ───────── 画面が低いときの圧縮 ─────────
+ * ★ここを削ると、低い画面で「話す」ボタンが画面外へ押し出される★
+ *
+ * 経緯（2026-07-29）: ご本人向けの一言を30字→50字に伸ばしたところ、
+ * 360×640 でパネルが442pxになり、104pxはみ出した。
+ * このとき**アバターは既に0pxまで縮んでおり、逃がす余地が無かった**。
+ * ＝ 高さが足りないときに縮むのはアバターだけ、という前提が
+ *    結果パネル表示中だけは成り立たない。だからここで直接詰める。
+ *
+ * 実測での内訳は「メッセージ99px / スコア48 / 免責38 / ボタン50」だったので、
+ * いちばん効くメッセージの級数を最優先で落としている。
+ * 変更したら 360×640 と 1280×600 の結果パネルで必ず測り直すこと。 */
 @media (max-height: 700px) {
   .result-panel {
-    padding: 18px 24px 16px;
+    padding: 12px 18px 10px;
   }
-  .result-number {
-    font-size: 48px;
+  .result-title {
+    font-size: 14px;
+    margin-bottom: 4px;
   }
   .result-emoji {
-    font-size: 40px;
+    font-size: 28px;
+  }
+  .result-number {
+    font-size: 36px;
+  }
+  .result-baseline {
+    font-size: 13px;
+    margin: 2px 0 6px;
+  }
+  /* ★いちばん効く★ 3行→2行に収める。読めなくならない下限として15px。 */
+  .result-message {
+    font-size: 15px;
+    margin-bottom: 8px;
+  }
+  .result-smile {
+    margin-bottom: 4px;
+  }
+  .result-notified {
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  /* 免責文は小さくしても**消さない**こと（§2.5の必須項目）。 */
+  .result-disclaimer {
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+  .result-close {
+    font-size: 15px;
+    padding: 8px 28px;
   }
 }

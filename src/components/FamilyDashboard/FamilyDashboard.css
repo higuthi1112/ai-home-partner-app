@@ -40,7 +40,9 @@
 }
 
 .family-baseline,
+.family-today,
 .family-chart,
+.family-photos,
 .family-alerts {
   background: rgba(255, 255, 255, 0.9);
   border-radius: 16px;
@@ -127,6 +129,120 @@
   width: 100%;
   min-height: 3px;
   border-radius: 6px 6px 0 0;
+}
+
+/* ───────── 今日のご様子（からだ／きもち／いまできること） ─────────
+   ご家族が最初に読む欄なので、読みやすさを優先して行間を広めにとる。 */
+.family-today {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.today-block,
+.today-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 「からだ」「きもち」などの小見出し。控えめだが迷わない程度に。 */
+.today-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #6b7aa0;
+}
+
+.today-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  color: #1e2a4a;
+}
+
+/* 「いまできること」。行動なので、読み飛ばされないよう少し目立たせる。 */
+.today-suggest {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f2f7ff;
+  border-left: 3px solid #4a86ff;
+}
+
+.today-list {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.today-list li {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #1e2a4a;
+}
+
+/* ───────── 最近の笑顔（サムネイル帯） ─────────
+   棒グラフと同じ考え方で、収まらない分は**このカードの中だけ**で横スクロールさせる。
+   ここを overflow なしにすると、写真の幅ぶん画面全体が横に広がってしまう。 */
+.family-photos {
+  overflow-x: auto;
+}
+
+.photo-strip {
+  display: flex;
+  gap: 10px;
+  min-width: min-content;
+}
+
+.photo-cell {
+  flex: 0 0 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.photo-frame {
+  width: 84px;
+  height: 63px; /* 4:3。撮影時と同じ比率にして歪ませない */
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eef2fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 撮影時と同じく鏡像にする（本人が見慣れた向き）。 */
+  transform: scaleX(-1);
+}
+
+.photo-empty {
+  font-size: 11px;
+  color: #8d99ae;
+}
+
+.photo-date {
+  font-size: 11px;
+  color: #6b7aa0;
+}
+
+.photo-score {
+  font-size: 10px;
+  color: #8d99ae;
+}
+
+/* 保存期間の断り書き。小さくても消さないこと（何が残るかの開示）。 */
+.family-photo-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8d99ae;
 }
 
 .family-bar-label {

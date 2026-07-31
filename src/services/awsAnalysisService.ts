@@ -143,6 +143,16 @@ export function createAwsAnalysisService(): AnalysisService {
       }
     },
 
+    // 笑顔の写真を1枚だけ取ってくる。
+    // ★見つからなくても例外にしない★
+    //   写真は7日で自動的に消えるため、「無い」のは普通の状態です。
+    //   画面側は null を受け取ったら「撮影なし」と出します。
+    async getPhoto(photoSk) {
+      const res = await postToLambda<{ imageBase64: string }>('getPhoto', { sk: photoSk })
+      if (!res.ok || !res.data?.imageBase64) return null
+      return res.data.imageBase64
+    },
+
     async history(days) {
       const res = await postToLambda<HistorySummary>('history', { days })
 

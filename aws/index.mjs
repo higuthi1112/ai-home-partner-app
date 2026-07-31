@@ -15,7 +15,9 @@
 // もう1つ、日常の雑談の返事を作る仕事もします（Gemini または Bedrock）。
 //
 // ★重要な設計方針★
-//   ・写真は保存しません。メモリ上で分析してすぐ捨てます（S3を使いません）。
+//   ・写真は7日間だけ保存し、そのあとDynamoDBが自動で消します（S3は使いません）。
+//     ご家族が「最近の様子」を見るのに必要なぶんだけ持ち、それ以上は持ちません。
+//     消し忘れが起きないよう、期限はデータ自身に持たせています（TTL）。
 //   ・クラウドを使うのは「問診のとき」と「雑談の返事」だけです。
 //   ・「元気度」は観察の目安であって、病気の診断ではありません。
 //     Claude へのお願い文にもそのルールを書き込んでいます（PROMPT_RULES）。
@@ -43,7 +45,12 @@ import {
 // ---------------------------------------------------------------------
 const BASELINE_DAYS = 14 // 平常値を計算するのに何日分さかのぼるか
 const MIN_BASELINE_DAYS = 3 // 平常値がこの日数分たまるまで低下判定をしない
-const DATA_RETENTION_DAYS = 90 // DynamoDB のデータを何日で自動削除するか（TTL）
+const DATA_RETENTION_DAYS = 90 // 分析結果・通知記録を何日で自動削除するか（TTL）
+
+// ★笑顔の写真だけは、ずっと短くする★
+// ご家族が「最近の様子」を見るのに必要なぶんだけ持ち、それ以上は持ちません。
+// 期限が来たら DynamoDB が自動で消すので、消し忘れが起きません。
+const PHOTO_RETENTION_DAYS = 7
 
 // 同じ通知を連続で送らないための時間（分）。
 // ★1日1回にすると、当日リハーサルで1回鳴らした後、本番で鳴らなくなります。
@@ -114,10 +121,14 @@ export const handler = async (event) => {
         return await analyzeInterview(body, userId)
       case 'chat':
         return await handleChat(body, userId)
+      case 'followUp':
+        return await handleFollowUp(body, userId)
       case 'notify':
         return await handleNotify(body, userId)
       case 'history':
         return await handleHistory(body, userId)
+      case 'getPhoto':
+        return await handleGetPhoto(body, userId)
       case 'seed':
         return await handleSeed(body, userId)
       case 'deleteToday':
@@ -149,11 +160,15 @@ async function analyzeInterview(body, userId) {
 
   // --- 笑顔の写真を分析する（あれば） ---
   let smileScore = null
+  let emotions = []
   if (body.imageBase64) {
-    // ★写真そのものはログに出さないこと（出すと「保存しません」が嘘になります）。
+    // ★写真そのものはログに出さないこと★
+    //   ログに残すと、消したはずの写真がCloudWatchに残り続けてしまいます。
+    //   出してよいのは「何文字だったか」だけです。
     console.log(`[analyzeInterview] 画像を受信 (base64 ${body.imageBase64.length} 文字)`)
-    smileScore = await detectSmile(body.imageBase64)
-    // ※画像はこの関数を抜ければ破棄されます。どこにも保存していません。
+    const detected = await detectSmile(body.imageBase64)
+    smileScore = detected.smileScore
+    emotions = detected.emotions
   }
 
   // --- ご本人の平常値を出す（過去14日ぶんを1回のQueryで取得） ---
@@ -165,11 +180,36 @@ async function analyzeInterview(body, userId) {
     slot: body.slot ?? 'morning',
     answers,
     smileScore,
+    emotions,
     baseline,
   })
 
-  // --- 記録する（画像は保存しない。回答は先頭30文字だけ） ---
   const now = new Date().toISOString()
+
+  // --- 笑顔の写真を保存する（7日で自動的に消える） ---
+  // ★写真の本体は、分析結果とは別の項目に分けて入れる★
+  //   同じ項目に入れてしまうと、ご家族が履歴を開くたびに
+  //   すべての画像まで一緒に読み込むことになり、とても重くなります。
+  //   別にしておけば、必要な1枚だけをあとから取りに行けます。
+  let photoSk = null
+  if (body.imageBase64) {
+    photoSk = `PHOTO#${now}`
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          userId,
+          sk: photoSk,
+          imageBase64: body.imageBase64,
+          createdAt: now,
+          // ここだけ7日。期限が来たらDynamoDBが自動で消してくれます。
+          expiresAt: ttlEpoch(PHOTO_RETENTION_DAYS),
+        },
+      }),
+    )
+  }
+
+  // --- 記録する（写真は上の別項目。ここには参照だけ持つ。回答は先頭30文字だけ） ---
   await ddb.send(
     new PutCommand({
       TableName: TABLE_NAME,
@@ -181,6 +221,17 @@ async function analyzeInterview(body, userId) {
         vitality: judged.vitality,
         level: judged.level,
         smileScore,
+        // 写真そのものではなく「どこにあるか」だけを持たせる。
+        // 7日たつと写真は消えるが、この参照が残っていても
+        // 取りに行ったときに「ありません」と返るだけなので問題ない。
+        photoSk,
+        // ご家族のダッシュボードに出す文章。
+        // ★通知が飛ばない日（LOG/GOOD）でも、ご家族が様子を読めるようにするため★
+        //   以前は通知が飛んだ日の記録しか文章が残らず、
+        //   「少し不調だが通報の閾値には届かない日」が数字だけになっていた。
+        bodyNote: judged.bodyNote,
+        moodNote: judged.moodNote,
+        suggestions: judged.suggestions,
         answersExcerpt: answers.map((a) => ({
           questionId: a.questionId,
           answer: String(a.answer ?? '').slice(0, 30),
@@ -212,8 +263,33 @@ async function analyzeInterview(body, userId) {
   })
 }
 
-// 笑顔の写真から「HAPPY（うれしい）」の確信度を取り出す。
+// Rekognition が返す感情の名前を、やさしい日本語に直す表。
+// ★必ず「見たままの様子」の言い方にすること★
+//   「悲しんでいる」と断定せず「かなしそう」と書くのは、
+//   写真1枚から気持ちを決めつけないためです（CLAUDE.md §2.5）。
+const EMOTION_JA = {
+  HAPPY: 'うれしそう',
+  CALM: 'おだやか',
+  SAD: 'かなしそう',
+  CONFUSED: 'とまどっているよう',
+  SURPRISED: 'おどろいているよう',
+  ANGRY: '怒っているよう',
+  DISGUSTED: 'いやそう',
+  FEAR: 'こわがっているよう',
+}
+
+// 笑顔の写真から表情を読み取る。
+//
+// Rekognition は8種類の感情をまとめて返してくれます（追加料金はかかりません）。
+// 以前は HAPPY だけ使って残り7つを捨てていましたが、
+// 「笑ってはいないがおだやか」と「笑ってもいないし元気もない」を
+// 区別できないため、上位のものを Claude に渡すようにしました。
+//
+// 返り値: { smileScore, emotions }
+//   smileScore … HAPPY の確信度 0〜100（今までと同じ。画面や記録に使う）
+//   emotions   … 上位の表情の一覧（Claude に渡す材料）
 async function detectSmile(base64) {
+  const empty = { smileScore: null, emotions: [] }
   try {
     const bytes = Buffer.from(base64, 'base64')
     const result = await rekognition.send(
@@ -222,14 +298,28 @@ async function detectSmile(base64) {
     const face = result.FaceDetails?.[0]
     if (!face) {
       console.log('[detectSmile] 顔が検出できませんでした')
-      return null
+      return empty
     }
-    const happy = face.Emotions?.find((e) => e.Type === 'HAPPY')
-    return Math.round(happy?.Confidence ?? 0)
+
+    const all = face.Emotions ?? []
+    const happy = all.find((e) => e.Type === 'HAPPY')
+
+    // 確信度の高い順に並べ、ごく低いものは雑音なので捨てる。
+    // 4件もあれば「どんな表情だったか」は十分に伝わります。
+    const emotions = all
+      .filter((e) => (e.Confidence ?? 0) >= 5)
+      .sort((a, b) => (b.Confidence ?? 0) - (a.Confidence ?? 0))
+      .slice(0, 4)
+      .map((e) => ({
+        label: EMOTION_JA[e.Type] ?? '判別できず',
+        confidence: Math.round(e.Confidence ?? 0),
+      }))
+
+    return { smileScore: Math.round(happy?.Confidence ?? 0), emotions }
   } catch (err) {
     // 写真が分析できなくても問診全体は続ける。
     console.error('[detectSmile] 表情の分析に失敗しました', err)
-    return null
+    return empty
   }
 }
 
@@ -238,23 +328,46 @@ async function detectSmile(base64) {
 // =====================================================================
 
 // ★★★ 絶対に守らせるルール ★★★
-// このアプリは医療機器ではありません。病名を出したり診断をしたりしてはいけません。
+// このアプリは医療機器ではありません。
+// 体調やお気持ちの様子は詳しく書いてよいのですが、
+// 「病名を出すこと」と「薬をすすめること」だけは絶対にさせません。
 // これは法律（薬機法）と倫理の要請であり、言い回しの好みの問題ではありません。
 const PROMPT_RULES = `
 あなたは高齢者見守りアプリのアシスタントです。
-朝または夜の問診の回答と、笑顔の写真から算出したスコアを読み、
-ご本人の「元気度」を0〜100で見積もり、ご家族へ知らせるべきかを判断してください。
+朝または夜の問診の回答と、笑顔の写真から読み取った表情をよく読んで、
+ご本人の体とお気持ちの様子をご家族に伝え、ご家族がいま取れることを提案してください。
 
-【絶対に守ること】
-1. あなたは医師ではありません。病気の診断・判定は絶対にしないでください。
-2. 次の言葉を出力に含めてはいけません:
-   うつ / 認知症 / 診断 / 疑い / 異常 / 判定 / リスク / 病気 / 症状
-3. 書いてよいのは「見たままの観察」だけです。
-   良い例: 「よく眠れていて、笑顔もいつもどおりでした」
-           「あまり眠れていないご様子です」
-   悪い例: 「うつの疑いがあります」「異常が見られます」
-4. 比較してよいのは「ご本人の平常値」だけです。他人や一般的な基準と比べないでください。
-5. 出力は必ずJSONだけにしてください。前置きも説明も付けないでください。
+【してよいこと（ここは遠慮しないでください）】
+・お答えどうしを結びつけて考えてよいです。
+  例:「眠れていないことと、だるさが重なっているようです」
+・気になることが何日続いているかに触れてよいです。
+・表情とお答えが食い違うときは、その食い違い自体に触れてよいです。
+  例:「笑顔は見せてくださいましたが、腰の痛みが続いているとのことです」
+・ご家族が今日できることを、具体的に提案してよいです。
+
+【絶対にしてはいけないこと（3つだけ。ここは厳守）】
+1. 病名や状態の名前を出さないでください。
+   （うつ / 認知症 / 不眠症 / 脱水症 など、名前のついたものは一切だめです）
+2. 薬をすすめないでください。
+   （市販薬・処方薬・サプリメント・漢方、すべてだめです。
+     「痛み止めを飲んでは」のような言い方もしないでください）
+3. 断定しないでください。「〜のようです」「〜かもしれません」と書いてください。
+
+【そのほかに守ること】
+・比較してよいのは「ご本人の平常値」だけです。他人や一般的な基準と比べないでください。
+・表情は写真1枚から読み取った、そのときだけの様子です。表情だけで決めつけないでください。
+  お答えの内容と食い違うときは、お答えのほうを重く見てください。
+・出力は必ずJSONだけにしてください。前置きも説明も付けないでください。
+
+【提案（suggestions）の書き方】
+・ご家族が「今日できること」を1〜3個、具体的に書いてください。
+  良い例:「お電話で腰の具合を聞いてみてください」
+          「よく眠れているか、さりげなく聞いてみてください」
+・気になる状態が続いているときは、
+  「かかりつけの先生に相談することも考えてみてください」と書いてよいです。
+  ★迷ったら、専門家に相談する方向をすすめてください。★
+・逆に「様子を見て大丈夫です」と言い切らないでください。
+・「病院へ行くべきです」のような断定もしないでください。
 
 【元気度のめやす】
   80〜100 … とても元気そう
@@ -273,12 +386,15 @@ const PROMPT_RULES = `
 {
   "vitality": 62,
   "level": "LOG",
-  "message": "画面に出す一言。ご本人向けにやさしく。30文字以内。",
-  "familyMessage": "ご家族へ送る文。何があったかを具体的に。100文字以内。"
+  "message": "ご本人の画面に出す一言。ねぎらいと、やさしい気遣いを一言。50文字以内。",
+  "familyMessage": "ご家族へメールで送る文。何があったかを具体的に。100文字以内。",
+  "bodyNote": "体の様子。ご家族向けに詳しく。150文字以内。",
+  "moodNote": "お気持ちの様子。ご家族向けに詳しく。150文字以内。",
+  "suggestions": ["ご家族がいま取れること", "（1〜3個）"]
 }
 `.trim()
 
-async function judgeWithBedrock({ slot, answers, smileScore, baseline }) {
+async function judgeWithBedrock({ slot, answers, smileScore, emotions = [], baseline }) {
   // モデルIDが未設定なら、AIを呼ばずに「判断できなかった」として返す。
   if (!BEDROCK_MODEL_ID) {
     console.warn('[judge] BEDROCK_MODEL_ID が未設定です')
@@ -290,15 +406,26 @@ async function judgeWithBedrock({ slot, answers, smileScore, baseline }) {
     .map((a) => `Q: ${a.question ?? a.questionId}\nA: ${a.answer || '（お答えがありませんでした）'}`)
     .join('\n\n')
 
+  // 表情の一覧。「うれしそう 92% / おだやか 5%」のような形にして渡す。
+  // 割合を添えるのは、はっきりした表情なのか微妙なのかを区別できるようにするため。
+  const emotionLine =
+    emotions.length > 0
+      ? `写真から読み取れた様子: ${emotions.map((e) => `${e.label} ${e.confidence}%`).join(' / ')}`
+      : null
+
   const context = [
     `時間帯: ${slot === 'evening' ? '就寝前' : '起床後'}`,
     smileScore !== null
       ? `笑顔スコア: ${smileScore}（0〜100。写真から算出）`
       : '笑顔スコア: 撮影できませんでした',
+    emotionLine,
     baseline.average !== null
       ? `ご本人の平常値: ${baseline.average}（過去${baseline.count}日の平均）`
       : `ご本人の平常値: まだ計測中です（あと${MIN_BASELINE_DAYS - baseline.count}日分必要）`,
-  ].join('\n')
+  ]
+    // 撮影できなかったときは表情の行を丸ごと省く。
+    .filter(Boolean)
+    .join('\n')
 
   try {
     const res = await bedrock.send(
@@ -308,7 +435,11 @@ async function judgeWithBedrock({ slot, answers, smileScore, baseline }) {
         accept: 'application/json',
         body: JSON.stringify({
           anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: 500,
+          // ★書かせる項目を増やしたぶん、上限も増やすこと★
+          //   ここが足りないと返事が途中で切れ、JSONとして読めなくなります。
+          //   （そうなると fallbackJudgement に落ちて「確認できませんでした」になります）
+          //   本文で 500〜600 文字ぶん書かせるので、余裕をみて 1500 にしています。
+          max_tokens: 1500,
           system: PROMPT_RULES,
           messages: [
             {
@@ -331,8 +462,28 @@ async function judgeWithBedrock({ slot, answers, smileScore, baseline }) {
 
     // ★念のための最終チェック★
     // Claude が禁止語を書いてしまった場合に備え、こちら側でも弾く。
+    // ★新しく増やした項目にも必ず通すこと★ ここが最後の砦です。
     const message = sanitize(parsed.message, 'いつもどおりの様子です')
     const familyMessage = sanitize(parsed.familyMessage, 'ご様子をお知らせします。')
+    const bodyNote = sanitize(
+      parsed.bodyNote,
+      '体の様子について、今回はうまくまとめられませんでした。',
+    )
+    const moodNote = sanitize(
+      parsed.moodNote,
+      'お気持ちの様子について、今回はうまくまとめられませんでした。',
+    )
+
+    // 提案は配列。1つずつ確認して、危ない言葉が入ったものだけを取り除く。
+    // （全部消えてしまったときは、当たりさわりのない案内を1つだけ残す）
+    const rawSuggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+    const suggestions = rawSuggestions
+      .map((s) => sanitize(s, '')) // 危ないものは空にする
+      .filter((s) => s.length > 0)
+      .slice(0, 3)
+    if (suggestions.length === 0) {
+      suggestions.push('お時間のあるときに、お電話してみませんか。')
+    }
 
     // 平常値がまだ足りないときは、低下による WARNING を出さない（誤検知防止）。
     let level = normalizeLevel(parsed.level)
@@ -346,6 +497,9 @@ async function judgeWithBedrock({ slot, answers, smileScore, baseline }) {
       level,
       message,
       familyMessage,
+      bodyNote,
+      moodNote,
+      suggestions,
     }
   } catch (err) {
     console.error('[judge] Bedrock の呼び出しに失敗しました', err)
@@ -362,6 +516,12 @@ function fallbackJudgement(smileScore, baseline) {
     level: 'LOG',
     message: '今回はくわしく確認できませんでした',
     familyMessage: '',
+    // ★ここで「問題ありませんでした」と書かないこと★
+    //   分析できなかっただけなのに「大丈夫」と伝わると、
+    //   本当は不調だった場合にご家族の判断を誤らせます。正直に書きます。
+    bodyNote: '今回はご様子をまとめられませんでした。',
+    moodNote: '今回はご様子をまとめられませんでした。',
+    suggestions: ['お時間のあるときに、お電話してみませんか。'],
   }
 }
 
@@ -379,7 +539,26 @@ function extractJson(text) {
 }
 
 // 禁止語が含まれていたら差し替える（最後の砦）。
-const BANNED_WORDS = ['うつ', '鬱', '認知症', '診断', '疑い', '異常', '判定', '病気', '症状']
+//
+// ★「うつ」ではなく「うつ病」で見ていることに注意★
+//   「うつ」だけで探すと、ふつうの観察である「うつむき加減でした」まで
+//   引っかかってしまい、せっかくの分析文が丸ごと差し替わってしまいます。
+//   文章を長く書かせるようにしたぶん、この取りこぼしより誤検出のほうが起きやすいので、
+//   病名としてはっきり書かれた形だけを弾く方針にしています。
+//   （なお「うつの疑い」のような書き方は「疑い」の側で引っかかります）
+const BANNED_WORDS = [
+  'うつ病',
+  '鬱',
+  '認知症',
+  '不眠症',
+  '脱水症',
+  '診断',
+  '疑い',
+  '異常',
+  '判定',
+  '病気',
+  '症状',
+]
 
 function sanitize(text, fallback) {
   const value = typeof text === 'string' ? text.trim() : ''
@@ -485,7 +664,89 @@ const ACK_SYSTEM = `
 　入力「ごはんはしっかり食べました」→ 出力「しっかり食べられて何よりです。」
 `.trim()
 
-// system には CHAT_SYSTEM（雑談）か ACK_SYSTEM（相槌）が渡ってきます。
+// =====================================================================
+// 【7-2】問診の「追いかけ質問」を作る
+// =====================================================================
+// 1問目の回答を受けて、その内容を掘り下げる質問を1つだけ作ります。
+// できた質問は、3問目の固定質問と入れ替えて読み上げられます。
+//
+// ★これは相槌（もうAIにやらせていない）とは別物です★
+//   相槌をやめたのは「相槌の直後に固定質問が続くので、AIが質問を返すと
+//   質問が2つ並ぶ」からでした。今回はAIの質問が固定質問を**置き換える**ので、
+//   その事故は構造的に起きません。
+//
+// ★それでも「1回の出力に質問を2つ書く」ことはありえます★
+//   プロンプトで禁じても守られる保証はないので、
+//   **受け取ったフロント側で「？が1つだけか」を数えて弾いています。**
+//   確定的に防げるのはそちらだけです。ここはあくまで一次防御です。
+const FOLLOWUP_SYSTEM = `
+あなたは高齢者の見守りアプリのアバターです。
+いま尋ねた質問と、その回答をお渡しします。
+その回答の中で**いちばん気になったこと**を、もう少しだけ詳しく聞く質問を作ってください。
+
+守ってほしいこと:
+・★質問は1つだけ★にしてください。2つ以上書いてはいけません。
+・30文字以内。高齢者が一度聞いて分かる、みじかい文にしてください。
+・かならず「〜ですか？」の形で終えてください。
+・やさしい言葉で。むずかしい言葉やカタカナ語は使わないでください。
+・病名を出さないでください。薬をすすめないでください。
+・お金のことや家族関係など、答えにくいことは聞かないでください。
+・責めるような聞き方をしないでください。
+・質問の文だけを返してください。前置きも説明も付けないでください。
+
+良い例:
+　質問「昨夜はよく眠れましたか？」／回答「腰が痛くて眠れませんでした」
+　　→ 出力「腰の痛みは、いつ頃から続いていますか？」
+
+　質問「朝ごはんは召し上がりましたか？」／回答「食欲がなくて少しだけ」
+　　→ 出力「食欲がないのは、何日くらい続いていますか？」
+
+悪い例（こう書いてはいけません）:
+　「痛みますか？　いつからですか？」… 質問が2つある
+　「それはおつらいですね。腰は痛みますか？」… 前置きが付いている
+`.trim()
+
+async function handleFollowUp(body, userId) {
+  const question = String(body.question ?? '').trim()
+  const answer = String(body.answer ?? '').trim()
+
+  // 回答が無い（聞き取れなかった）ときは、掘り下げようがないので作らない。
+  if (!answer) return respond(200, { ok: false, error: '回答がありません' })
+
+  if (CHAT_PROVIDER === 'none') {
+    return respond(200, { ok: false, error: '追いかけ質問は使用しない設定です' })
+  }
+
+  // 雑談と同じ枠で数える（1問診あたり1回だけなので、枠を圧迫しません）。
+  const allowed = await consumeDailyQuota(userId, 'chat', DAILY_LIMIT_CHAT)
+  if (!allowed) {
+    console.warn('[followUp] 本日の上限に達したため作成しませんでした')
+    return respond(200, { ok: false, error: '本日の会話回数の上限に達しました' })
+  }
+
+  const input = `質問「${question}」\n回答「${answer}」`
+
+  try {
+    const reply =
+      CHAT_PROVIDER === 'gemini'
+        ? await chatWithGemini(input, [], FOLLOWUP_SYSTEM)
+        : await chatWithBedrock(input, [], FOLLOWUP_SYSTEM)
+
+    if (!reply) return respond(200, { ok: false, error: '質問を作れませんでした' })
+
+    // 禁止語が混ざっていたら、無理に質問せず「作れなかった」ことにする。
+    // （固定文の質問に落ちるだけなので、問診は止まりません）
+    const safe = sanitize(reply, '')
+    if (!safe) return respond(200, { ok: false, error: '質問を作れませんでした' })
+
+    return respond(200, { ok: true, question: safe })
+  } catch (err) {
+    console.error('[followUp] 作成に失敗しました', err)
+    return respond(200, { ok: false, error: '質問を作れませんでした' })
+  }
+}
+
+// system には CHAT_SYSTEM（雑談）／ACK_SYSTEM（相槌）／FOLLOWUP_SYSTEM（追いかけ質問）が渡ります。
 async function chatWithGemini(text, history, system) {
   if (!GEMINI_API_KEY) {
     console.warn('[chat] GEMINI_API_KEY が未設定です')
@@ -668,6 +929,14 @@ async function handleHistory(body, userId) {
         morning: d.morning,
         evening: d.evening,
         level: d.level ?? 'LOG',
+        // その日の写真のありか。写真そのものは重いのでここには載せず、
+        // 画面が必要になったときに getPhoto で1枚ずつ取りに行く。
+        // 7日を過ぎた日は写真が消えているので null になる。
+        photoSk: d.photoSk ?? null,
+        // ご家族のダッシュボードに出す、その日のご様子と提案。
+        bodyNote: d.bodyNote ?? null,
+        moodNote: d.moodNote ?? null,
+        suggestions: d.suggestions ?? null,
       }
     })
 
@@ -687,6 +956,45 @@ async function handleHistory(body, userId) {
     })),
     lastConversationAt: events.length > 0 ? events[events.length - 1].createdAt : null,
   })
+}
+
+// =====================================================================
+// 【10-2】笑顔の写真を1枚だけ返す
+// =====================================================================
+// ★1枚ずつ取りに行く理由★
+//   履歴に全部の写真を載せると、1回の返事が1MB近くになってしまいます。
+//   ご家族の画面は7日ぶんのサムネイルを出すので、必要な分だけ別々に取りに来ます。
+//
+// ★7日たった写真は「無い」のが正しい動作★
+//   DynamoDB が期限切れの項目を自動で消すため、ここでは何もしなくても消えます。
+//   見つからないときはエラーではなく「もうありません」と伝えます。
+async function handleGetPhoto(body, userId) {
+  const sk = String(body.sk ?? '')
+
+  // ★必ず PHOTO# で始まることを確かめる★
+  //   これが無いと、sk に EVENT# などを渡して
+  //   写真以外の記録まで読み出せてしまいます。
+  if (!sk.startsWith('PHOTO#')) {
+    console.warn(`[getPhoto] 写真以外を読もうとしました: ${sk.slice(0, 20)}`)
+    return respond(400, { ok: false, error: '写真の指定が正しくありません' })
+  }
+
+  // 検索のキーに userId が入っているので、他のご家庭の写真は構造的に読めません。
+  const res = await ddb.send(
+    new GetCommand({ TableName: TABLE_NAME, Key: { userId, sk } }),
+  )
+
+  if (!res.Item?.imageBase64) {
+    return respond(200, {
+      ok: false,
+      error: `写真はもうありません（${PHOTO_RETENTION_DAYS}日で自動的に消えます）`,
+    })
+  }
+
+  // ★ここでも写真の中身はログに出さないこと。
+  console.log(`[getPhoto] 写真を1枚返しました (${res.Item.imageBase64.length} 文字)`)
+
+  return respond(200, { ok: true, imageBase64: res.Item.imageBase64 })
 }
 
 // =====================================================================
@@ -926,7 +1234,17 @@ function groupByDay(events) {
     if (typeof e.vitality !== 'number') continue
     const date = toJstDate(e.sk.replace('EVENT#', ''))
     if (!byDay[date]) {
-      byDay[date] = { vitality: null, smileScore: null, morning: null, evening: null, level: null }
+      byDay[date] = {
+        vitality: null,
+        smileScore: null,
+        morning: null,
+        evening: null,
+        level: null,
+        photoSk: null,
+        bodyNote: null,
+        moodNote: null,
+        suggestions: null,
+      }
     }
     const d = byDay[date]
     if (e.slot === 'evening') d.evening = e.vitality
@@ -937,6 +1255,15 @@ function groupByDay(events) {
     d.vitality = Math.round(both.reduce((a, b) => a + b, 0) / both.length)
     if (typeof e.smileScore === 'number') d.smileScore = e.smileScore
     d.level = e.level ?? d.level
+
+    // 写真は1日1枚だけ出す。朝夜そろっている日は新しいほう（夜）を使う。
+    // events は古い順に届くので、後から来たもので上書きすれば新しいほうが残る。
+    if (e.photoSk) d.photoSk = e.photoSk
+
+    // ご様子の文章も同じく、その日の新しいほうを残す。
+    if (e.bodyNote) d.bodyNote = e.bodyNote
+    if (e.moodNote) d.moodNote = e.moodNote
+    if (Array.isArray(e.suggestions) && e.suggestions.length > 0) d.suggestions = e.suggestions
   }
   return byDay
 }
@@ -1007,8 +1334,9 @@ function toJstDate(iso) {
 }
 
 // TTL（自動削除）の時刻。エポック秒で入れる決まり。
-function ttlEpoch() {
-  return Math.floor((Date.now() + DATA_RETENTION_DAYS * 86400000) / 1000)
+// 日数を渡さなければ今までどおり90日。写真だけ ttlEpoch(PHOTO_RETENTION_DAYS) で7日にする。
+function ttlEpoch(days = DATA_RETENTION_DAYS) {
+  return Math.floor((Date.now() + days * 86400000) / 1000)
 }
 
 function rand(n) {
