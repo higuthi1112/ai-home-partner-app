@@ -28,14 +28,9 @@ export interface UseSpeechSynthesis {
 //   いまは端末ごとの手がかりで点数を付けて選び、
 //   さらに**設定画面から本人が選べる**ようにしている（実機で聞き比べるため）。
 
-// 句読点（。！？、）の直後で文を区切る。読み上げに「間（ま）」を作るため。
-function splitIntoChunks(text: string): string[] {
-  const chunks = text
-    .split(/(?<=[。！？、])/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-  return chunks.length > 0 ? chunks : [text]
-}
+// ※かつてここに splitIntoChunks（句読点で文を切る関数）があったが、
+//   2026-07-31 に削除した。理由は speakWithSynthesis のコメントを参照。
+//   「戻したほうが自然になるのでは」と思ったら、まず実機で聞き比べること。
 
 export function useSpeechSynthesis(): UseSpeechSynthesis {
   const [isSupported] = useState(() => 'speechSynthesis' in window)
@@ -71,19 +66,39 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
     audio.play().catch(finish) // 再生できなければ即終了扱い
   }, [])
 
-  // 方針B: Web Speech API を自然寄りに調整して読み上げる。
+  // 方針B: Web Speech API で読み上げる。
+  //
+  // ★2026-07-31 変更。文を区切って読ませるのをやめた★
+  //   以前は句読点（。！？、）ごとに文を切り、**それぞれを別々の発話として**
+  //   読ませていた。「間」を作って自然にする意図だったが、逆効果だった。
+  //
+  //   別々の発話にすると、読み上げエンジンはそれぞれを「1つの文」として扱う。
+  //   そのため「では最後に、」のような**まだ続く語句にも文末の下がり調子**が付き、
+  //   ぶつ切りに聞こえる。実機（iPhone）で「区切り方が不自然」と指摘されたのはこれ。
+  //
+  //   いまのエンジンは読点・句点の間を自分で適切に取れる。
+  //   **文まるごと渡したほうが自然**になるので、そうしている。
   const speakWithSynthesis = useCallback((text: string, onEnd?: () => void) => {
     // 毎回ここで解決する。設定画面で声を変えたら、次の発話からすぐ反映されるようにするため。
     const voice = resolveVoice()
-    const chunks = splitIntoChunks(text)
 
-    // 句読点ごとの「間」。話す速さに反比例させる（速くしたら間も詰める）。
-    // 標準(1.0)で120ms、1.2なら100ms。短くしすぎると棒読みになるので下限を置く。
-    const pauseMs = Math.max(60, Math.round(120 / config.speechRate))
-
-    let chunkIndex = 0
     let finished = false
-    let safetyTimer = 0
+
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'ja-JP'
+    if (voice) utterance.voice = voice
+    // 話す速さは config で決める（?rate=1.3 のようにURLでその場でも変えられる）。
+    utterance.rate = config.speechRate
+    utterance.pitch = 1.0
+    utteranceRef.current = utterance // GC対策
+
+    // onend/onerror が発火しないブラウザ不具合の保険。
+    // ★文まるごとになったぶん、長さに応じて延ばすこと★
+    //   固定の8秒のままだと、長いセリフの途中で「終わった」と誤判定して
+    //   次の質問へ進んでしまう。日本語はおよそ1秒あたり6〜7文字なので、
+    //   その見積もりに余裕を足している。
+    const estimatedMs = (text.length / 6) * 1000 * (1 / config.speechRate)
+    const safetyMs = Math.max(8000, Math.round(estimatedMs + 5000))
 
     const finish = () => {
       if (finished) return
@@ -93,35 +108,12 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
       onEnd?.()
     }
 
-    const speakNext = () => {
-      if (chunkIndex >= chunks.length) {
-        finish()
-        return
-      }
-      const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex])
-      chunkIndex += 1
-      utterance.lang = 'ja-JP'
-      if (voice) utterance.voice = voice
-      // 話す速さは config で決める（?rate=1.3 のようにURLでその場でも変えられる）。
-      utterance.rate = config.speechRate
-      utterance.pitch = 1.0
-      utteranceRef.current = utterance // GC対策
+    const safetyTimer = window.setTimeout(finish, safetyMs)
 
-      // 次の塊との間に短い「間」を空けてから読む。
-      // ★この「間」も体感速度に効く★
-      //   句読点ごとに区切って読むので、長いセリフほど積み重なる。
-      //   話す速さを上げたら「間」も比例して短くしないと、速くなった感じがしない。
-      utterance.onend = () => window.setTimeout(speakNext, pauseMs)
-      utterance.onerror = finish
+    utterance.onend = finish
+    utterance.onerror = finish
 
-      // onend/onerror が発火しないブラウザ不具合の保険（塊ごとに延長）。
-      window.clearTimeout(safetyTimer)
-      safetyTimer = window.setTimeout(finish, 8000)
-
-      window.speechSynthesis.speak(utterance)
-    }
-
-    speakNext()
+    window.speechSynthesis.speak(utterance)
   }, [])
 
   const speak = useCallback(
