@@ -11,6 +11,7 @@ import { audioManifest } from '../assets/audio/manifest'
 // ※ services/index.ts ではなく config.ts を直接読む。
 //   index.ts を読むとAWSサービスの生成まで走ってしまうため。
 import { config } from '../services/config'
+import { resolveVoice } from '../services/voicePreference'
 
 export interface UseSpeechSynthesis {
   isSupported: boolean
@@ -18,13 +19,14 @@ export interface UseSpeechSynthesis {
   cancel: () => void
 }
 
-// ja-JPの声の中から、より自然な声（Natural / Online / Google を含む名前）を優先的に選ぶ。
-// 無ければ最初のja-JP声にフォールバックする。
-function pickNaturalVoice(): SpeechSynthesisVoice | undefined {
-  const jaVoices = window.speechSynthesis.getVoices().filter((v) => v.lang === 'ja-JP')
-  const preferred = jaVoices.find((v) => /natural|online|google/i.test(v.name))
-  return preferred ?? jaVoices[0]
-}
+// 読み上げに使う声を決める処理は services/voicePreference.ts にまとめてある。
+//
+// ★2026-07-31 変更★
+//   以前はここで `/natural|online|google/` に当たる声を1つ探していたが、
+//   **iPhone の音声名は「Kyoko」「Otoya」なので1つも当たらず**、
+//   結果として「最初に見つかった声」がそのまま使われていた（品質が選べていなかった）。
+//   いまは端末ごとの手がかりで点数を付けて選び、
+//   さらに**設定画面から本人が選べる**ようにしている（実機で聞き比べるため）。
 
 // 句読点（。！？、）の直後で文を区切る。読み上げに「間（ま）」を作るため。
 function splitIntoChunks(text: string): string[] {
@@ -71,7 +73,8 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
 
   // 方針B: Web Speech API を自然寄りに調整して読み上げる。
   const speakWithSynthesis = useCallback((text: string, onEnd?: () => void) => {
-    const voice = pickNaturalVoice()
+    // 毎回ここで解決する。設定画面で声を変えたら、次の発話からすぐ反映されるようにするため。
+    const voice = resolveVoice()
     const chunks = splitIntoChunks(text)
 
     // 句読点ごとの「間」。話す速さに反比例させる（速くしたら間も詰める）。

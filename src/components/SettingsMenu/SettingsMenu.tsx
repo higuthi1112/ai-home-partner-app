@@ -8,9 +8,16 @@
 //   発表は朝でも夜でもないので、時刻の自動起動を待っていては問診を見せられません。
 //   このボタンがあれば、登壇中に確実に問診を開始できます。
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { InterviewSlot } from '../../types'
 import { loadWatchTimes, saveWatchTimes } from '../../services/watchSchedule'
+import {
+  listJapaneseVoices,
+  loadVoiceURI,
+  resolveVoice,
+  saveVoiceURI,
+} from '../../services/voicePreference'
+import { config } from '../../services/config'
 import './SettingsMenu.css'
 
 interface Props {
@@ -20,6 +27,40 @@ interface Props {
 export default function SettingsMenu({ onStartInterview }: Props) {
   const [open, setOpen] = useState(false)
   const [times, setTimes] = useState(() => loadWatchTimes())
+
+  // 端末に入っている日本語の声と、選ばれている声。
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [voiceURI, setVoiceURI] = useState<string | null>(() => loadVoiceURI())
+
+  // ★声の一覧は遅れて届くことがある★
+  //   getVoices() は最初の呼び出しで空の配列を返す環境がある（読み込みが非同期のため）。
+  //   voiceschanged を待たないと、設定を開いても「選べません」と出てしまう。
+  useEffect(() => {
+    const load = () => setVoices(listJapaneseVoices())
+    load()
+    window.speechSynthesis?.addEventListener('voiceschanged', load)
+    return () => window.speechSynthesis?.removeEventListener('voiceschanged', load)
+  }, [])
+
+  const changeVoice = (uri: string | null) => {
+    setVoiceURI(uri)
+    saveVoiceURI(uri)
+  }
+
+  // 選んだ声で短い一言を読み上げる。聞き比べて決めてもらうため。
+  const speakSample = () => {
+    if (!('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance('こんにちは。今日の調子はいかがですか。')
+    u.lang = 'ja-JP'
+    const v = resolveVoice()
+    if (v) u.voice = v
+    u.rate = config.speechRate
+    window.speechSynthesis.speak(u)
+  }
+
+  // いま実際に使われる声の名前（おまかせのときに何が選ばれたかを確かめる用）。
+  const currentVoiceName = resolveVoice()?.name ?? '（見つかりません）'
 
   // 時刻を変更したら、その場で localStorage にも保存する。
   const changeTime = (slot: InterviewSlot, value: string) => {
@@ -85,6 +126,48 @@ export default function SettingsMenu({ onStartInterview }: Props) {
                   onChange={(e) => changeTime('evening', e.target.value)}
                 />
               </label>
+            </section>
+
+            {/* ★声の選択★
+                読み上げに使える声は端末に入っているものだけで、
+                iPhone / Android / Windows でまったく変わる。
+                コード側で「良い声」を当てにいっても開発機では確かめられないので、
+                実機で聞き比べて選んでもらう作りにしている。
+                当日、声がおかしいと感じたときの差し替え口にもなる。 */}
+            <section className="menu-section">
+              <h3 className="menu-section-title">アバターの声</h3>
+              <p className="menu-note">
+                この端末に入っている声から選べます。「聞いてみる」で試せます。
+              </p>
+
+              {voices.length === 0 ? (
+                <p className="menu-note">この端末では声を選べません。</p>
+              ) : (
+                <>
+                  <select
+                    className="menu-select"
+                    value={voiceURI ?? ''}
+                    onChange={(e) => changeVoice(e.target.value || null)}
+                  >
+                    <option value="">おまかせ（自動で選ぶ）</option>
+                    {voices.map((v) => (
+                      <option key={v.voiceURI} value={v.voiceURI}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button className="menu-action" onClick={speakSample}>
+                    🔊 聞いてみる
+                  </button>
+
+                  {/* 実機で「いまどれが使われているか」を確かめる手がかり。
+                      iPhoneでは開発者ツールが開けないので、画面に出しておく。 */}
+                  <p className="menu-note menu-voice-now">
+                    いまの声: {currentVoiceName}
+                  </p>
+                </>
+              )}
             </section>
 
             <section className="menu-section">

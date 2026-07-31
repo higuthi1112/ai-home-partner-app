@@ -128,6 +128,27 @@
   background: #ffffff;
 }
 
+/* 声を選ぶプルダウン。時刻の入力欄と見た目をそろえる。
+   幅いっぱいにするのは、音声名が長いことがあるため（「Microsoft Nanami Online (Natural)」等）。 */
+.menu-select {
+  width: 100%;
+  font-size: 17px;
+  font-family: inherit;
+  padding: 10px 12px;
+  border: 1px solid #dbe4f5;
+  border-radius: 10px;
+  color: #1e2a4a;
+  background: #ffffff;
+  margin-bottom: 10px;
+}
+
+/* 「いまの声」の表示。実機で何が選ばれているかを確かめるための手がかり。
+   iPhoneでは開発者ツールが開けないので、画面に出しておく必要がある。 */
+.menu-voice-now {
+  margin-top: 8px;
+  word-break: break-all;
+}
+
 /* 「いま始める」のボタン。高齢者にも押しやすい大きさにする。 */
 .menu-action {
   display: block;
