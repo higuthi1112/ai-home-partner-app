@@ -49,6 +49,11 @@ const FIRST_QUESTION_FOR_FOLLOWUP_EVENING = 'day'
 // 差し替える対象（3問目「体の調子で、気になるところはありますか？」）。
 const FOLLOWUP_TARGET_ID = 'body'
 
+// 問診の結果パネルを自動で閉じるまでの時間（ミリ秒）。
+// 締めのことばの読み上げが3〜4秒あるので、そのあと数秒読める長さにしている。
+// 短くしすぎると読み終わる前に消え、長すぎると次の会話を始めにくい。
+const RESULT_AUTO_CLOSE_MS = 10000
+
 // 画面に出す「通知オフ」バッジなどの状態。
 export interface StatusBadges {
   notificationsSuppressed: boolean // 「本日 通知オフ」バッジ
@@ -502,6 +507,13 @@ export function useConversation(data: ConversationData): UseConversation {
 
     const script = interview.slot ? data.interview?.[interview.slot] : null
     if (script) speakThen(script.closing, () => {})
+
+    // ★一定時間たったら自動で閉じて、いつもの画面に戻す★
+    //   高齢者に「閉じる」ボタンを探させないため。押さないと戻れない作りだと、
+    //   パネルが出たまま放置され、次に話しかけようとしたときに戸惑わせてしまう。
+    //   自分で閉じたい人のためにボタンは残してある（押せば即座に閉じる）。
+    const timer = window.setTimeout(() => interview.close(), RESULT_AUTO_CLOSE_MS)
+    return () => window.clearTimeout(timer)
     // 結果が出たときだけ動かす。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interview.state, interview.result])

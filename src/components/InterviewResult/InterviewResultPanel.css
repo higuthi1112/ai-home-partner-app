@@ -1,6 +1,12 @@
-/* 問診の結果パネル（画面中央）。
-   高齢者にも見やすいよう、数字を大きく・余白を広くとっている。
-   z-index の意味は App.css の先頭にまとめてある（20 = 画面に浮かせるもの）。 */
+/* 問診のあとに、ご本人の画面へ出すパネル。
+ *
+ * ★2026-07-31 方針変更★
+ *   以前は元気度の数字を特大で出していたが、ご本人に点数を見せるのをやめた
+ *   （理由は InterviewResultPanel.tsx の冒頭コメント）。
+ *   いまはねぎらいの一言が主役なので、文章が読みやすいことを最優先にしている。
+ *   数字が消えたぶん背が低くなり、狭い画面での余裕も生まれた。
+ *
+ * z-index の意味は App.css の先頭にまとめてある（20 = 画面に浮かせるもの）。 */
 
 .result-panel {
   position: relative;
@@ -8,7 +14,7 @@
   width: min(88vw, 460px);
   /* 字幕と同じく、画面が狭くてもここは縮ませない（縮むのはアバターだけ）。 */
   flex-shrink: 0;
-  padding: 28px 32px 24px;
+  padding: 26px 32px 22px;
   border-radius: 20px;
   border: 3px solid transparent;
   background: rgba(255, 255, 255, 0.96);
@@ -16,77 +22,43 @@
   text-align: center;
 }
 
-/* レベルごとの色。赤は緊急だけに使い、WARNING は落ち着いたオレンジにする。 */
-.result-good {
-  border-color: #2a9d8f;
-}
-.result-log {
-  border-color: #adb5bd;
-}
-.result-warning {
-  border-color: #f4a261;
-}
-.result-emergency {
-  border-color: #e63946;
+/* ★色はレベルでは変えない★
+   元気度に応じて枠の色を変えると、色そのものが点数として伝わってしまう
+   （赤い枠を見た時点で不安になる）。数字を隠した意味が無くなるので、
+   色を変えるのは「ご家族に知らせた日」だけにしている。 */
+.result-notified-day {
+  border-color: #4a86ff;
 }
 
 .result-title {
-  margin: 0 0 8px;
-  font-size: 18px;
+  margin: 0 0 12px;
+  font-size: 17px;
   color: #6b7aa0;
 }
 
-.result-score {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 4px;
-}
-
-.result-emoji {
-  font-size: 52px;
-  line-height: 1;
-}
-
-.result-number {
-  font-size: 64px;
-  font-weight: bold;
-  line-height: 1;
-  color: #14213d;
-}
-
-/* ご本人の平常値との比較。ここが「他人と比べていない」ことを示す一番大事な行。 */
-.result-baseline {
-  margin: 4px 0 12px;
-  font-size: 17px;
-  color: #4a86ff;
-  font-weight: bold;
-}
-
+/* ねぎらいの一言。このパネルの主役なので大きく、行間も広めにとる。 */
 .result-message {
-  margin: 0 0 12px;
+  margin: 0 0 18px;
   font-size: 22px;
   font-weight: bold;
-  line-height: 1.5;
+  line-height: 1.7;
   color: #1e2a4a;
+  text-wrap: balance;
 }
 
-.result-smile {
-  margin: 0 0 8px;
-  font-size: 15px;
-  color: #6b7aa0;
-}
-
+/* ご家族へ知らせた日だけ出る行。隠さないことが信頼につながる。 */
 .result-notified {
   margin: 0 0 16px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #eef3fb;
   font-size: 16px;
   color: #1e2a4a;
 }
 
-/* 必ず入れる注意書き。小さくても消さないこと。 */
+/* 必ず入れる注意書き。小さくても消さないこと（CLAUDE.md §2.5）。 */
 .result-disclaimer {
-  margin: 0 0 20px;
+  margin: 0 0 18px;
   font-size: 12px;
   line-height: 1.6;
   color: #8d99ae;
@@ -101,57 +73,43 @@
   background: #4a86ff;
   color: #ffffff;
   cursor: pointer;
+  font-family: inherit;
+}
+
+.result-close:focus-visible {
+  outline: 3px solid #14213d;
+  outline-offset: 2px;
 }
 
 /* ───────── 画面が低いときの圧縮 ─────────
  * ★ここを削ると、低い画面で「話す」ボタンが画面外へ押し出される★
  *
- * 経緯（2026-07-29）: ご本人向けの一言を30字→50字に伸ばしたところ、
- * 360×640 でパネルが442pxになり、104pxはみ出した。
- * このとき**アバターは既に0pxまで縮んでおり、逃がす余地が無かった**。
- * ＝ 高さが足りないときに縮むのはアバターだけ、という前提が
- *    結果パネル表示中だけは成り立たない。だからここで直接詰める。
- *
- * 実測での内訳は「メッセージ99px / スコア48 / 免責38 / ボタン50」だったので、
- * いちばん効くメッセージの級数を最優先で落としている。
+ * 数字を消したことでパネルはかなり低くなったが、
+ * 「ねぎらいの一言（50字）＋通知の行」が重なる日はまだ背が高くなる。
  * 変更したら 360×640 と 1280×600 の結果パネルで必ず測り直すこと。 */
 @media (max-height: 700px) {
   .result-panel {
-    padding: 12px 18px 10px;
+    padding: 16px 20px 14px;
   }
   .result-title {
     font-size: 14px;
-    margin-bottom: 4px;
-  }
-  .result-emoji {
-    font-size: 28px;
-  }
-  .result-number {
-    font-size: 36px;
-  }
-  .result-baseline {
-    font-size: 13px;
-    margin: 2px 0 6px;
-  }
-  /* ★いちばん効く★ 3行→2行に収める。読めなくならない下限として15px。 */
-  .result-message {
-    font-size: 15px;
     margin-bottom: 8px;
   }
-  .result-smile {
-    margin-bottom: 4px;
+  .result-message {
+    font-size: 17px;
+    margin-bottom: 12px;
   }
   .result-notified {
     font-size: 14px;
-    margin-bottom: 6px;
+    margin-bottom: 10px;
+    padding: 6px 12px;
   }
-  /* 免責文は小さくしても**消さない**こと（§2.5の必須項目）。 */
   .result-disclaimer {
     font-size: 10px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
   }
   .result-close {
-    font-size: 15px;
-    padding: 8px 28px;
+    font-size: 16px;
+    padding: 9px 32px;
   }
 }
