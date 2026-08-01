@@ -26,6 +26,7 @@ import { useSpeechRecognition } from './useSpeechRecognition'
 import { useInterview, type UseInterview } from './useInterview'
 import { useCamera, type UseCamera } from './useCamera'
 import { currentSlot, isDoneToday, loadWatchTimes, markDoneToday } from '../services/watchSchedule'
+import { prefetchSpeech } from '../services/speechService'
 
 // アバターが話し終わってから、聞き取りを始めるまでの待ち時間（ミリ秒）。
 //
@@ -522,6 +523,10 @@ export function useConversation(data: ConversationData): UseConversation {
   useEffect(() => {
     if (!supported) return
 
+    // 第一声だけは先読みが間に合わない（開いた直後に話すため）。
+    // せめて挨拶の候補を先に頼んでおき、2回目以降は待ちが無いようにする。
+    prefetchSpeech(data.openings)
+
     const greet = () => speakAndListen(pickRandom(data.openings))
 
     // 音声リストは非同期で読み込まれることがあるため、未ロードなら待つ。
@@ -569,6 +574,20 @@ export function useConversation(data: ConversationData): UseConversation {
       //   3問目でいきなり尋ねてしまう。
       followUpRef.current = ''
       spokenTextRef.current = ''
+
+      // ★これから読む台本の音声を、まとめて先に取りに行く★
+      //   クラウドの音声は取得に1〜2秒かかる。質問のたびに待つと、
+      //   そのあいだアバターが黙ってしまい問診がもたつく。
+      //   ここで先に頼んでおけば、実際に読むころには届いている。
+      //   待たないので、間に合わなくても問診の進行には影響しない。
+      const script = data.interview?.[slot]
+      if (script) {
+        prefetchSpeech([
+          `${script.greeting} ${script.questions[0]?.text ?? ''}`,
+          ...script.questions.slice(1).map((q) => q.text),
+          script.closing,
+        ])
+      }
       // 雑談の途中で問診が始まることがある。数えを持ち越すと、問診のあとの雑談が
       // いきなり「3ターン目（＝すぐ締める）」から始まってしまうのでここで戻す。
       chatTurnRef.current = 0

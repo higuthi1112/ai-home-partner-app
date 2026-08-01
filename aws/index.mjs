@@ -123,6 +123,8 @@ export const handler = async (event) => {
         return await handleChat(body, userId)
       case 'followUp':
         return await handleFollowUp(body, userId)
+      case 'speak':
+        return await handleSpeak(body, userId)
       case 'notify':
         return await handleNotify(body, userId)
       case 'history':
@@ -663,6 +665,83 @@ const ACK_SYSTEM = `
 　入力「あまり眠れませんでした」→ 出力「それは、おつらかったですね。」
 　入力「ごはんはしっかり食べました」→ 出力「しっかり食べられて何よりです。」
 `.trim()
+
+// =====================================================================
+// 【7-3】読み上げの音声を作る（Amazon Polly）
+// =====================================================================
+// アバターのセリフを、Pollyの日本語ニューラル音声で読み上げたMP3にして返します。
+//
+// ★なぜ入れたのか（2026-08-01）★
+//   ブラウザ内蔵の読み上げは、端末に入っている音声しか使えません。
+//   iPhone で実際に試したところ「機械音すぎて不自然」という結果でした。
+//   端末側の設定（拡張音声のダウンロード）でも改善しなかったため、
+//   どの端末でも同じ品質になるよう Polly を使うことにしました。
+//
+// ★フロント側には必ず逃げ道があります★
+//   ここが失敗しても、フロントは端末内蔵の音声に切り替えて読み上げます。
+//   つまり通信が落ちても「無音になる」ことはありません。
+//
+// ★SDKの読み込みは、この関数の中だけで行います★
+//   Lambdaのランタイムに @aws-sdk/client-polly が入っていない可能性が
+//   ゼロではないため、ファイル冒頭で import すると、
+//   万一無かったときにLambda全体が起動しなくなります（問診も雑談も全部止まる）。
+//   ここで動的に読み込めば、失敗してもこの機能だけが使えなくなるだけで済みます。
+
+// 使う声。AWS担当と相談して Tomoko（日本語・女性・ニューラル）に決めた。
+// 変えたくなったら環境変数で差し替えられる。
+const POLLY_VOICE = process.env.POLLY_VOICE ?? 'Tomoko'
+const POLLY_ENGINE = process.env.POLLY_ENGINE ?? 'neural'
+
+// 1日の読み上げ回数の上限。1回の問診で10回ほど話すので、多めにしてある。
+// ※同じ文はフロント側で使い回すので、実際の呼び出しはこれよりずっと少ない。
+const DAILY_LIMIT_SPEAK = Number(process.env.DAILY_LIMIT_SPEAK ?? 600)
+
+// Pollyの接続は使い回す（毎回作ると遅い）。最初に使うときだけ作る。
+let pollyClient = null
+
+async function handleSpeak(body, userId) {
+  const text = String(body.text ?? '').trim()
+  if (!text) return respond(200, { ok: false, error: 'テキストが空です' })
+
+  // Pollyの上限は3000文字。アプリのセリフはせいぜい100文字だが、念のため。
+  if (text.length > 1000) {
+    return respond(200, { ok: false, error: 'テキストが長すぎます' })
+  }
+
+  const allowed = await consumeDailyQuota(userId, 'speak', DAILY_LIMIT_SPEAK)
+  if (!allowed) {
+    console.warn('[speak] 本日の読み上げ回数の上限に達しました')
+    return respond(200, { ok: false, error: '本日の読み上げ回数の上限に達しました' })
+  }
+
+  try {
+    // ★ここで初めて読み込む（上のコメント参照）
+    const { PollyClient, SynthesizeSpeechCommand } = await import('@aws-sdk/client-polly')
+    if (!pollyClient) pollyClient = new PollyClient({})
+
+    const res = await pollyClient.send(
+      new SynthesizeSpeechCommand({
+        Text: text,
+        VoiceId: POLLY_VOICE,
+        Engine: POLLY_ENGINE,
+        OutputFormat: 'mp3',
+        LanguageCode: 'ja-JP',
+      }),
+    )
+
+    // 返ってくるのはストリームなので、まとめてbase64に直す。
+    const bytes = await res.AudioStream.transformToByteArray()
+    const audioBase64 = Buffer.from(bytes).toString('base64')
+
+    console.log(`[speak] ${text.length}文字 → ${audioBase64.length}文字のMP3`)
+    return respond(200, { ok: true, audioBase64 })
+  } catch (err) {
+    // ★ここで失敗しても、フロントは端末の音声で読み上げます。
+    //   よくある原因: IAMに polly:SynthesizeSpeech が無い／SDKが入っていない。
+    console.error('[speak] 音声を作れませんでした', err)
+    return respond(200, { ok: false, error: '音声を作れませんでした' })
+  }
+}
 
 // =====================================================================
 // 【7-2】問診の「追いかけ質問」を作る

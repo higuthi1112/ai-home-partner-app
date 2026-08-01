@@ -12,6 +12,7 @@ import { audioManifest } from '../assets/audio/manifest'
 //   index.ts を読むとAWSサービスの生成まで走ってしまうため。
 import { config } from '../services/config'
 import { resolveVoice } from '../services/voicePreference'
+import { fetchSpeechUrl } from '../services/speechService'
 
 export interface UseSpeechSynthesis {
   isSupported: boolean
@@ -53,18 +54,66 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
   // アンマウント時に発話を止める。
   useEffect(() => cancel, [cancel])
 
-  // 方針A: 事前生成したMP3を再生する。
-  const speakWithAudioFile = useCallback((url: string, onEnd?: () => void) => {
-    const audio = new Audio(url)
-    audioRef.current = audio
-    const finish = () => {
-      audioRef.current = null
-      onEnd?.()
+  // ★iOS の自動再生制限を外す（2026-08-01 追加）★
+  //   iPhone / iPad は、利用者が画面に触れる前の音声再生を止める。
+  //   そのままだとクラウドの音声（MP3）が1回目だけ鳴らないことがある。
+  //   最初に画面を触ったときに、無音の音声をひと当てして「再生してよい」状態にしておく。
+  //   （ブラウザ内蔵の読み上げは別扱いなので、この制限を受けにくい）
+  useEffect(() => {
+    let unlocked = false
+    const unlock = () => {
+      if (unlocked) return
+      unlocked = true
+      try {
+        // ごく短い無音のMP3。鳴らないので利用者には気づかれない。
+        const silent = new Audio(
+          'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA',
+        )
+        silent.volume = 0
+        void silent.play().catch(() => {})
+      } catch {
+        // 失敗しても害はない（そのときは端末内蔵の読み上げに落ちるだけ）。
+      }
+      window.removeEventListener('touchend', unlock)
+      window.removeEventListener('click', unlock)
     }
-    audio.onended = finish
-    audio.onerror = finish
-    audio.play().catch(finish) // 再生できなければ即終了扱い
+    window.addEventListener('touchend', unlock, { once: false })
+    window.addEventListener('click', unlock, { once: false })
+    return () => {
+      window.removeEventListener('touchend', unlock)
+      window.removeEventListener('click', unlock)
+    }
   }, [])
+
+  // MP3（同梱ファイル or クラウドで作った音声）を再生する。
+  //
+  // ★再生できなかったことを、呼び出し側に伝えること★
+  //   以前は失敗しても「読み終わった」ことにしていたが、それだと無音のまま
+  //   次へ進んでしまう。とくに iOS は、利用者が画面を触る前の自動再生を
+  //   止めることがあるので、失敗したら端末内蔵の読み上げに切り替える。
+  const speakWithAudioFile = useCallback(
+    (url: string, onEnd?: () => void, onFail?: () => void) => {
+      const audio = new Audio(url)
+      audioRef.current = audio
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        audioRef.current = null
+        onEnd?.()
+      }
+      const fail = () => {
+        if (settled) return
+        settled = true
+        audioRef.current = null
+        onFail?.()
+      }
+      audio.onended = finish
+      audio.onerror = fail
+      audio.play().catch(fail)
+    },
+    [],
+  )
 
   // 方針B: Web Speech API で読み上げる。
   //
@@ -116,6 +165,14 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
     window.speechSynthesis.speak(utterance)
   }, [])
 
+  // 読み上げる。優先順位は次のとおり。
+  //   1. 同梱のMP3（あれば。いまは登録なし）
+  //   2. クラウドで作った音声（Polly）… 端末によらず同じ品質
+  //   3. 端末内蔵の読み上げ … ★最後の砦。ここまで落ちても必ず声は出る★
+  //
+  // ★2と3の関係が大事★
+  //   クラウドが使えない・間に合わない・再生できない、のいずれでも
+  //   黙って3へ切り替える。通信が落ちても会話が止まらないようにするため。
   const speak = useCallback(
     (text: string, onEnd?: () => void) => {
       if (!isSupported) {
@@ -124,12 +181,33 @@ export function useSpeechSynthesis(): UseSpeechSynthesis {
       }
       cancel() // 前の発話が残っていたら止める
 
-      const audioUrl = audioManifest[text]
-      if (audioUrl) {
-        speakWithAudioFile(audioUrl, onEnd) // 方針A
-      } else {
-        speakWithSynthesis(text, onEnd) // 方針B
+      // 1. 同梱のMP3
+      const bundled = audioManifest[text]
+      if (bundled) {
+        speakWithAudioFile(bundled, onEnd, () => speakWithSynthesis(text, onEnd))
+        return
       }
+
+      // 2. クラウドの音声。用意できなければ 3 に落ちる。
+      //    ここで待っている間アバターは黙るので、待ちすぎないようにしてある
+      //    （speechService の SPEAK_TIMEOUT_MS）。
+      //    問診の質問は先読みしてあるので、通常この待ちは発生しない。
+      let fellBack = false
+      const toDeviceVoice = () => {
+        if (fellBack) return
+        fellBack = true
+        speakWithSynthesis(text, onEnd)
+      }
+
+      fetchSpeechUrl(text)
+        .then((url) => {
+          if (!url) {
+            toDeviceVoice()
+            return
+          }
+          speakWithAudioFile(url, onEnd, toDeviceVoice)
+        })
+        .catch(toDeviceVoice)
     },
     [isSupported, cancel, speakWithAudioFile, speakWithSynthesis],
   )

@@ -14,6 +14,7 @@
 //   ?debug=1      … 手入力の欄を出す（マイクが使えないときの保険）
 //   ?ack=off      … 問診の相槌をやめる（もたつくときの退避）
 //   ?followup=off … 問診の「追いかけ質問」をやめて、台本の固定文だけにする
+//   ?voice=device … クラウドの音声をやめて、端末内蔵の読み上げに戻す
 //   ?rate=1.2     … アバターの話す速さを変える（1.0が標準・大きいほど速い）
 
 export type BackendMode = 'mock' | 'aws'
@@ -87,6 +88,14 @@ export const config = {
 
   // 手入力の欄を出すか（マイクが使えないときの保険）。
   debugInput: readOverride('debug') === '1',
+
+  // アバターの読み上げにクラウドの音声（Polly）を使うか。
+  // ★当日の退避スイッチ★
+  //   ?voice=device を付ければ端末内蔵の読み上げに戻る。
+  //   会場の回線が遅くて音声の到着が間に合わないときの逃げ道。
+  //   （なお、届かなかった場合は指定しなくても自動で端末の音声に切り替わる）
+  cloudVoiceEnabled:
+    readOverride('voice') !== 'device' && (import.meta.env.VITE_CLOUD_VOICE ?? 'on') !== 'off',
 
   // 問診の3問目を「AIが作った追いかけ質問」に差し替えるか。
   // ★当日の退避スイッチ★
